@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/pazz-thriving-tribe/public/logo/logomain.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PTT</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+  </script>
+  <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          // Add explicit custom fallback variables if needed
+        }
+      }
+    }
+  }
+</script>
+<script>
+  (function() {
+    // Check local storage for an existing preference on page boot
+    var activePreference = localStorage.getItem('pazz_theme_preference') || 'light';
+    
+    window.switchClientTheme = function(chosenTheme) {
+      var rootElement = document.documentElement;
+      var bodyElement = document.body;
+      
+      localStorage.setItem('pazz_theme_preference', chosenTheme);
+
+      if (chosenTheme === 'dark') {
+        // ACTIVATE THE CLIENT'S NATIVE HOOKS
+        rootElement.classList.add('dark', 'dark-mode');
+        if (bodyElement) bodyElement.classList.add('dark', 'dark-mode');
+        
+        rootElement.setAttribute('data-theme', 'dark');
+        if (bodyElement) bodyElement.setAttribute('data-theme', 'dark');
+      } else {
+        // STRIP THEM AWAY TO RESTORE YOUR ORIGINAL LIGHT THEME
+        rootElement.classList.remove('dark', 'dark-mode');
+        if (bodyElement) bodyElement.classList.remove('dark', 'dark-mode');
+        
+        rootElement.removeAttribute('data-theme');
+        if (bodyElement) bodyElement.removeAttribute('data-theme');
+      }
+    };
+
+    // Run immediately when the script evaluates to avoid flashing layouts
+    window.switchClientTheme(activePreference);
+  })();
+</script>
+  </body>
+</html>
