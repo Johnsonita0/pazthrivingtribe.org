@@ -2789,7 +2789,44 @@ export default function SolutionChatPage() {
                     <span className="solution-chat-note-icon purple"><i className="fa-solid fa-book-bible" aria-hidden="true"></i></span>
                     <span><strong>{note.reference}</strong><small>{note.note}</small></span>
                     <time dateTime={note.updatedAt}>{formatBibleNoteTimestamp(note.updatedAt)}</time>
-                    <button type="button" onClick={() => openBibleNoteInReader(note)}>Open verse</button>
+                    <div className="solution-chat-scripture-note-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBibleNoteReference(editingBibleNoteReference === note.reference ? '' : note.reference);
+                          setDraftBibleNote(note.note);
+                          setBibleNoteError('');
+                          setBibleNoteStatus('');
+                        }}
+                      >
+                        {editingBibleNoteReference === note.reference ? 'Cancel edit' : 'Edit note'}
+                      </button>
+                      <button type="button" onClick={() => openBibleNoteInReader(note)}>Open verse</button>
+                    </div>
+                    {editingBibleNoteReference === note.reference && (
+                      <form
+                        className="solution-chat-bible-note-editor solution-chat-my-note-editor"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          saveBibleNote(note.reference);
+                        }}
+                      >
+                        <label htmlFor={`solution-chat-my-note-${note.reference.replace(/[^a-z0-9]+/gi, '-')}`}>Edit your note for {note.reference}</label>
+                        <textarea
+                          id={`solution-chat-my-note-${note.reference.replace(/[^a-z0-9]+/gi, '-')}`}
+                          value={draftBibleNote}
+                          onChange={(event) => setDraftBibleNote(event.target.value)}
+                          rows={3}
+                          maxLength={5000}
+                          autoFocus
+                        />
+                        <div>
+                          <button type="submit" disabled={!draftBibleNote.trim() || loadedBibleNotesKey !== bibleNotesStorageKey}>Save changes</button>
+                          <button type="button" onClick={() => deleteBibleNote(note.reference)}>Delete note</button>
+                          <button type="button" onClick={() => { setEditingBibleNoteReference(''); setDraftBibleNote(''); }}>Cancel</button>
+                        </div>
+                      </form>
+                    )}
                   </article>
                 ))}
               {newNote.trim() && <article className="solution-chat-note-card"><span className="solution-chat-note-icon blue"><i className="fa-solid fa-note-sticky" aria-hidden="true"></i></span><span><strong>New Note</strong><small>{newNote}</small></span><time>Today</time></article>}

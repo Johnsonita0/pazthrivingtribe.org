@@ -2769,7 +2769,13 @@
   white-space: nowrap;
 }
 
-.solution-chat-scripture-note-card > button {
+.solution-chat-scripture-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.solution-chat-scripture-note-actions button {
   min-height: 30px;
   padding: 0 9px;
   border: 1px solid #d3e3f7;
@@ -2780,6 +2786,12 @@
   font-size: 9px;
   font-weight: 750;
   white-space: nowrap;
+}
+
+.solution-chat-my-note-editor {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
 }
 
 .solution-chat-notes-empty {
