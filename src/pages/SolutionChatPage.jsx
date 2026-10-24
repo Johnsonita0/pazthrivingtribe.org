@@ -565,6 +565,9 @@ export default function SolutionChatPage() {
   const searchTranslationRef = useRef(translation);
   const [activeSection, setActiveSection] = useState('home');
   const [activeChatTab, setActiveChatTab] = useState('mentor');
+  const [mentorMessages, setMentorMessages] = useState([]);
+  const [mentorIsSending, setMentorIsSending] = useState(false);
+  const [mentorNeedsSignIn, setMentorNeedsSignIn] = useState(false);
   const [profileSession, setProfileSession] = useState(null);
   const [customerProfile, setCustomerProfile] = useState(null);
   const [profileName, setProfileName] = useState('');
@@ -1501,12 +1504,65 @@ export default function SolutionChatPage() {
     }
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!question.trim()) return;
-    setStatusMessage(navigator.onLine
-      ? 'AI Mentor Charles is not connected yet, so your message was not sent. Please check back soon.'
-      : 'Connect to the internet to use AI Mentor Charles. Your message has not been sent.');
+    const message = question.trim();
+    if (!message || mentorIsSending) return;
+    if (!navigator.onLine) {
+      setStatusMessage('Connect to the internet to chat with Mentor Charles. Your message has not been sent.');
+      return;
+    }
+
+    setMentorIsSending(true);
+    setMentorNeedsSignIn(false);
+    setStatusMessage('');
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      const accessToken = data.session?.access_token;
+      if (!accessToken) {
+        setMentorNeedsSignIn(true);
+        setStatusMessage('Sign in to PAZ World to chat with Mentor Charles. Your message has not been sent.');
+        return;
+      }
+
+      const response = await fetch('/api/mentor-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `******`
+        },
+        body: JSON.stringify({
+          message,
+          history: mentorMessages.slice(-8)
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401) {
+          setMentorNeedsSignIn(true);
+          throw new Error(payload.error || 'Sign in again to chat with Mentor Charles.');
+        }
+        throw new Error(payload.error || 'Mentor Charles could not reply. Please try again.');
+      }
+      if (typeof payload.message !== 'string' || !payload.message.trim()) {
+        throw new Error('Mentor Charles returned an empty reply. Please try again.');
+      }
+
+      setMentorMessages((messages) => [
+        ...messages,
+        { role: 'user', content: message },
+        { role: 'assistant', content: payload.message.trim() }
+      ]);
+      setQuestion('');
+      setActiveSection('chat');
+      setActiveChatTab('mentor');
+    } catch (error) {
+      console.error('Could not send a message to Mentor Charles:', error);
+      setStatusMessage(error instanceof Error ? error.message : 'Mentor Charles could not reply. Please try again.');
+    } finally {
+      setMentorIsSending(false);
+    }
   };
 
   const selectQuestion = (prompt) => {
@@ -2061,19 +2117,30 @@ export default function SolutionChatPage() {
                 </div>
                 <div className="solution-chat-mentor-privacy" role="status">
                   <i className="fa-solid fa-lock" aria-hidden="true"></i>
-                  <span><strong>Private to this browser session.</strong> Messages are not shared with Community Room or sent to Mentor Charles while AI replies are disconnected.</span>
+                  <span><strong>Private to your PAZ account.</strong> Messages are sent securely to PAZ’s AI service (OpenAI) to generate replies. They are not shared with Community Room or saved as chat history. Avoid sharing passwords or highly sensitive personal details.</span>
                 </div>
-                <div className="solution-chat-mentor-message">
-                  <p>Hello, I’m Mentor Charles. You can share what’s on your heart, and I’ll help you reflect with encouragement and Bible references.</p>
-                  <small>AI replies are not connected yet. Your message will not be sent.</small>
+                <div className="solution-chat-mentor-thread" aria-live="polite" aria-label="Conversation with Mentor Charles">
+                  <article className="solution-chat-mentor-message assistant">
+                    <p>Hello, I’m Mentor Charles. You can share what’s on your heart, and I’ll help you reflect with encouragement and Bible references.</p>
+                  </article>
+                  {mentorMessages.map((message, index) => (
+                    <article className={`solution-chat-mentor-message ${message.role}`} key={`${message.role}-${index}`}>
+                      <p>{message.content}</p>
+                    </article>
+                  ))}
+                  {mentorIsSending && (
+                    <article className="solution-chat-mentor-message assistant pending" role="status">
+                      <p><i className="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Mentor Charles is thinking…</p>
+                    </article>
+                  )}
                 </div>
-                <div className="solution-chat-mentor-prompts" aria-label="Suggested messages">
+                {!mentorMessages.length && <div className="solution-chat-mentor-prompts" aria-label="Suggested messages">
                   {suggestedQuestions.map((prompt) => (
                     <button type="button" key={prompt} onClick={() => { setQuestion(prompt); setStatusMessage(''); }}>
                       {prompt}
                     </button>
                   ))}
-                </div>
+                </div>}
                 <form className="solution-chat-mentor-composer" onSubmit={handleSubmit}>
                   <label className="solution-chat-sr-only" htmlFor="mentor-charles-message">Message AI Mentor Charles</label>
                   <textarea
@@ -2082,12 +2149,19 @@ export default function SolutionChatPage() {
                     onChange={(event) => { setQuestion(event.target.value); setStatusMessage(''); }}
                     placeholder="Message AI Mentor Charles..."
                     rows={2}
+                    maxLength={2000}
+                    disabled={mentorIsSending}
                   />
-                  <button type="submit" disabled={!question.trim()} aria-label="Send message to AI Mentor Charles">
-                    <i className="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                  <button type="submit" disabled={!question.trim() || mentorIsSending} aria-label="Send message to AI Mentor Charles">
+                    <i className={`fa-solid ${mentorIsSending ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`} aria-hidden="true"></i>
                   </button>
                 </form>
-                {statusMessage && <p className="solution-chat-status" role="status">{statusMessage}</p>}
+                {statusMessage && (
+                  <div className="solution-chat-mentor-status" role={mentorNeedsSignIn ? 'alert' : 'status'}>
+                    <p>{statusMessage}</p>
+                    {mentorNeedsSignIn && <button type="button" onClick={() => openSection({ id: 'profile' })}>Sign in</button>}
+                  </div>
+                )}
                 <p className="solution-chat-disclaimer">Faith-based reflection is not a substitute for professional care or emergency support.</p>
               </section>
             ) : (
@@ -2854,7 +2928,7 @@ export default function SolutionChatPage() {
             <span className="solution-chat-welcome-icon" aria-hidden="true"><i className="fa-solid fa-hands-praying"></i></span>
             <p className="solution-chat-eyebrow">YOU DON’T HAVE TO FIGURE IT OUT ALONE</p>
             <h2>What’s on your heart today?</h2>
-            <p>Share what you’re going through. PAZ World is being prepared to offer thoughtful encouragement and Bible references to help you reflect.</p>
+            <p>Share what you’re going through. Ask Mentor Charles for thoughtful encouragement and Bible references to help you reflect.</p>
           </div>
 
           <div className="solution-chat-suggestions" aria-label="Example questions">
@@ -2881,13 +2955,18 @@ export default function SolutionChatPage() {
             />
             <div className="solution-chat-composer-footer">
               <span><i className="fa-solid fa-shield-heart" aria-hidden="true"></i> Your conversation deserves care and respect.</span>
-              <button type="submit" disabled={!question.trim()} aria-label="Send message">
-                <span>Send</span>
-                <i className="fa-solid fa-arrow-up" aria-hidden="true"></i>
+              <button type="submit" disabled={!question.trim() || mentorIsSending} aria-label="Send message">
+                <span>{mentorIsSending ? 'Sending...' : 'Send'}</span>
+                <i className={`fa-solid ${mentorIsSending ? 'fa-spinner fa-spin' : 'fa-arrow-up'}`} aria-hidden="true"></i>
               </button>
             </div>
           </form>
-          {statusMessage && <p className="solution-chat-status" role="status">{statusMessage}</p>}
+          {statusMessage && (
+            <div className="solution-chat-mentor-status" role={mentorNeedsSignIn ? 'alert' : 'status'}>
+              <p>{statusMessage}</p>
+              {mentorNeedsSignIn && <button type="button" onClick={() => openSection({ id: 'profile' })}>Sign in</button>}
+            </div>
+          )}
 
           <p className="solution-chat-disclaimer">PAZ World offers faith-based reflection, not professional medical, mental health, or emergency care.</p>
         </div>

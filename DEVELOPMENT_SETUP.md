@@ -45,7 +45,7 @@ This starts both servers in the same terminal.
 
 ### API Development Server (Port 3001)
 - Runs on: `http://localhost:3001`
-- Handles: `/api/send-notification-email` requests
+- Handles `/api` requests, including Mentor Charles chat
 - Validates email format
 - Returns mock success responses for testing
 - Logs all subscription attempts
@@ -55,6 +55,12 @@ This starts both servers in the same terminal.
 - Serves your React application
 - Auto-reloads on file changes
 - Proxies API requests to port 3001
+
+### Mentor Charles AI Chat
+- Add your OpenAI API key as `OPENAI_API_KEY` in `backend/.env` (the backend's `.env.example` lists the variable).
+- Keep the key in the backend environment only; never add it to the frontend `.env` or a `VITE_` variable.
+- Ensure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are also set in `backend/.env`, then restart both development servers.
+- Local `/api/mentor-chat` requests are proxied to the local API server on port 3001.
 
 ## 🧪 Testing the Feature
 
