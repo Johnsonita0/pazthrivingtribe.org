@@ -1,0 +1,7105 @@
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
+import { Routes, Route, Link, Navigate, useLocation, useParams, useNavigate } from 'react-router-dom';
+import { supabase } from './supabaseClient';
+const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
+const TeensKidsMenu = lazy(() => import('./TeensKidsMenu'));
+const ThriverRegistrationModal = lazy(() => import('./ThriverRegistrationModal'));
+const NotFoundPage = lazy(() => import('./NotFoundPage'));
+const ComingSoonPage = lazy(() => import('./ComingSoonPage'));
+const GallerySection = lazy(() => import('./GallerySection'));
+const AdminDashboard = lazy(() => import('./AdminDashboard'));
+const TeensRegistrationPage = lazy(() => import('./pages/TeensRegistrationPage'));
+const BookSessionPage = lazy(() => import('./pages/BookSessionPage'));
+const FeedbackPage = lazy(() => import('./pages/FeedbackPage'));
+const ShopPage = lazy(() => import('./pages/ShopPage'));
+const VendorDashboard = lazy(() => import('./pages/VendorDashboard'));
+const CustomerSupportChat = lazy(() => import('./components/CustomerSupportChat'));
+const PaystackCallbackPage = lazy(() => import('./pages/PaystackCallbackPage'));
+const SolutionChatPage = lazy(() => import('./pages/SolutionChatPage'));
+import CustomDropdown from './components/CustomDropdown';
+import { notifyAdminActivity } from './utils/notifyAdminActivity';
+import { getIndependenceDaySlides } from './utils/independenceDaySlides';
+import confetti from 'canvas-confetti';
+
+const getNigeriaDateInfo = () => {
+  const dateParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  }).formatToParts(new Date());
+  const dateInfo = Object.fromEntries(dateParts.map(({ type, value }) => [type, Number(value)]));
+  return { year: dateInfo.year, month: dateInfo.month, day: dateInfo.day };
+};
+
+const whatsappTips = [
+  'Need help today?',
+  'Need support right now?',
+  'Need guidance this week?',
+  'Looking for a caring reply?',
+  'Need help booking a session?',
+  'Need a warm welcome today?'
+];
+
+const seoPages = {
+  '/': {
+    title: 'PAZ Thriving Tribe | Coaching & Mentoring in Nigeria',
+    description: 'Personal growth, coaching and mentoring for women, teens and families in Nigeria. Find caring guidance, youth development programs and practical support.'
+  },
+  '/paz-world': {
+    title: 'PAZ World | Faith-Based Solution Chat',
+    description: 'Find a welcoming space for faith-based encouragement and Bible reflection with PAZ World.'
+  },
+  '/care-counseling': {
+    title: 'Care & Counselling in Nigeria | PAZ Thriving Tribe',
+    description: 'Find caring, confidential support for emotional wellbeing, parenting and personal growth with PAZ Thriving Tribe.'
+  },
+  '/teens-kids-academy': {
+    title: 'Teens Mentoring & Youth Development | PAZ',
+    description: 'Explore PAZ Thriving Tribe mentoring for pre-teens and teens, focused on confidence, character, emotional wellbeing and practical life skills.'
+  },
+  '/services/children': {
+    title: 'Pre-teen & Teen Mentoring in Nigeria | PAZ',
+    description: 'One-to-one mentoring for pre-teens and teens to build confidence, self-reliance, character and emotional wellbeing.'
+  },
+  '/book-session': {
+    title: 'Book a Coaching or Support Session | PAZ',
+    description: 'Request a PAZ Thriving Tribe session for personal guidance, emotional support, parenting or family coaching.'
+  },
+  '/shop': {
+    title: 'Personal Growth Resources & Shop | PAZ Thriving Tribe',
+    description: 'Browse practical personal growth, family and teen resources from the PAZ Thriving Tribe shop.'
+  }
+};
+
+const noIndexPaths = [
+  '/paz-world',
+  '/admin',
+  '/dashboard',
+  '/vendor',
+  '/payment/callback',
+  '/feedback',
+  '/services/family',
+  '/services/marriage',
+  '/teens_reg',
+  '/teens-reg',
+  '/teens-registration',
+  '/tee'
+];
+
+let youtubeIframeApiPromise;
+const loadYouTubeIframeApi = () => {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (youtubeIframeApiPromise) return youtubeIframeApiPromise;
+
+  youtubeIframeApiPromise = new Promise((resolve, reject) => {
+    const previousCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previousCallback?.();
+      resolve(window.YT);
+    };
+
+    const script = document.createElement('script');
+    script.src = 'https://www.youtube.com/iframe_api';
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  return youtubeIframeApiPromise;
+};
+
+const legalDocuments = {
+  privacy: {
+    id: 'paz-privacy-policy',
+    title: 'Privacy Policy',
+    introduction: 'This policy explains how Paz Thriving Tribe handles information when you visit our site, contact us, register for a service, book a session, or shop with us.',
+    sections: [
+      {
+        title: 'Information you provide',
+        paragraphs: [
+          'We may collect the details you submit, such as your name, email address, phone number, age range, booking or registration information, messages, and order details. Please share only information relevant to your request.',
+          'Payment card details are handled by the payment provider shown at checkout. We receive the transaction status and reference needed to manage your order, not your full card credentials.'
+        ]
+      },
+      {
+        title: 'How we use information',
+        paragraphs: [
+          'We use information to respond to enquiries, arrange coaching and mentoring services, manage applications and orders, provide support, maintain site security, and improve our services. We do not sell personal information.',
+          'For marketplace product chats, we collect your name, email address, phone number, and messages. Chats about vendor products are shared with that product’s vendor and PAZ support; chats about PAZ products are handled by PAZ support. We store the conversation and may email participants about new messages so they can continue the conversation.'
+        ]
+      },
+      {
+        title: 'Confidentiality and young people',
+        paragraphs: ['Coaching and counselling enquiries are handled with care and shared only where needed to deliver the requested service, with your permission, or where disclosure is required for safeguarding or by law. For children and teenagers, a parent or guardian may need to participate in registration and service decisions.']
+      },
+      {
+        title: 'Service providers and links',
+        paragraphs: ['We may use trusted providers for hosting, secure data storage, communications, and payment processing. They receive only the information needed to perform those services and are subject to their own privacy terms. Links to other organisations are governed by those organisations’ policies.']
+      },
+      {
+        title: 'Cookies and device information',
+        paragraphs: ['The site may use essential browser storage and technical information to remember preferences, keep services working, protect against misuse, and understand basic site performance. You can manage cookies through your browser settings; some site functions may then be limited.']
+      },
+      {
+        title: 'Storage, security, and your choices',
+        paragraphs: ['We keep information only as long as reasonably needed for the service, operational records, safety, and legal obligations. We use reasonable safeguards, but no internet transmission or storage method can be guaranteed completely secure.', 'You may ask to access, correct, or delete information you provided, subject to legal and operational requirements. Contact us at pazthrivingtribe@gmail.com and tell us how we can help.']
+      },
+      {
+        title: 'Updates',
+        paragraphs: ['We may update this policy when our services or obligations change. The current version will be published on this page.']
+      }
+    ]
+  },
+  terms: {
+    id: 'paz-system-terms',
+    title: 'System Terms',
+    introduction: 'These terms apply when you use the Paz Thriving Tribe website, request a service, book a session, create an account, or place an order.',
+    sections: [
+      {
+        title: 'Using the site',
+        paragraphs: ['Please provide accurate information, keep account credentials private, and use the site lawfully. You are responsible for activity carried out through an account you control. We may restrict access where needed to protect people, services, or site security.']
+      },
+      {
+        title: 'Coaching, counselling, and mentoring',
+        paragraphs: ['Services are arranged according to the description and details confirmed with you. Progress and outcomes vary by person and are not guaranteed. Unless a specific clinical service is expressly agreed with a suitably qualified provider, site information and coaching are not a substitute for medical, mental-health, legal, or emergency care. If someone is in immediate danger, contact local emergency services.']
+      },
+      {
+        title: 'Children and teenagers',
+        paragraphs: ['A parent or legal guardian must be involved where required for a person under 18 to register, book, consent, or make payment. We may request guardian details to support safe and appropriate service delivery.']
+      },
+      {
+        title: 'Bookings, fees, and changes',
+        paragraphs: ['Any fee, payment schedule, cancellation window, or rescheduling condition shown during booking or confirmed directly with you forms part of that booking. Please contact us promptly if you need to change an appointment. If a service cannot be provided as agreed, contact us so we can discuss an appropriate resolution.']
+      },
+      {
+        title: 'Shop orders and digital items',
+        paragraphs: ['Prices, descriptions, availability, and delivery or access details are shown with the relevant product. An order is subject to confirmation and successful payment where applicable. Digital materials are for personal use unless a separate licence says otherwise; do not copy, redistribute, or resell them without permission.']
+      },
+      {
+        title: 'Content and third-party services',
+        paragraphs: ['Website text, branding, and original materials belong to Paz Thriving Tribe or their respective owners. Payment, communication, and linked services may be supplied by third parties and are also subject to those providers’ terms.']
+      },
+      {
+        title: 'Availability and responsibility',
+        paragraphs: ['We work to keep the site accurate and available, but features may change or be temporarily unavailable. To the extent permitted by applicable law, the site is provided without a guarantee that every service will be uninterrupted or suitable for every purpose. Nothing in these terms limits rights that cannot legally be limited.']
+      },
+      {
+        title: 'Questions or updates',
+        paragraphs: ['For questions about these terms or a booking or order, contact pazthrivingtribe@gmail.com. We may revise these terms and will publish the current version on this page.']
+      }
+    ]
+  }
+};
+
+function LegalDocumentModal({ policy, onClose }) {
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    panelRef.current?.querySelector('button')?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = [...panelRef.current.querySelectorAll('button, a[href], [tabindex]:not([tabindex="-1"])')]
+        .filter((element) => !element.disabled);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="legal-modal-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose(null);
+      }}
+    >
+      <section
+        ref={panelRef}
+        className="legal-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${policy.id}-title`}
+        aria-describedby={`${policy.id}-intro`}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            onClose(null);
+          }
+        }}
+      >
+        <header className="legal-modal-header">
+          <div>
+            <span className="legal-modal-eyebrow">PAZ THRIVING TRIBE</span>
+            <h2 id={`${policy.id}-title`}>{policy.title}</h2>
+            <p id={`${policy.id}-intro`}>{policy.introduction}</p>
+          </div>
+          <button type="button" className="legal-modal-dismiss" aria-label="Close policy" onClick={() => onClose(null)}>
+            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div className="legal-modal-body">
+          {policy.sections.map((section) => (
+            <section className="legal-modal-section" key={section.title}>
+              <h3>{section.title}</h3>
+              {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            </section>
+          ))}
+        </div>
+        <footer className="legal-modal-footer">
+          <span>Questions? pazthrivingtribe@gmail.com</span>
+          <button type="button" onClick={() => onClose(null)}>Close</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function AdminTabBar({ selectedTab, onChangeTab }) {
+  const adminTabs = [
+    { id: 'content', label: 'Page Content' },
+    { id: 'social', label: 'Social Preview' },
+    { id: 'programs', label: 'Programs' },
+    { id: 'applicants', label: 'Applicants' },
+    { id: 'payments', label: 'Payment Settings' }
+  ];
+
+  return (
+    <div className="dashboard-tab-navigation">
+      <div className="dashboard-tab-buttons">
+        {adminTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onChangeTab(tab.id)}
+            className={`dashboard-tab-button ${selectedTab === tab.id ? 'active' : ''}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeHelpModal({ context, services }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [step, setStep] = useState(0);
+  const [isDismissed, setIsDismissed] = useState(false);
+  const localHour = Number(new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    hourCycle: 'h23'
+  }).format(new Date()));
+  const timeGreeting = localHour >= 5 && localHour < 12
+    ? 'Good morning'
+    : localHour >= 12 && localHour < 17
+      ? 'Good afternoon'
+      : 'Good evening';
+
+  const contextCopy = {
+    home: {
+      title: 'What can we do for you today?',
+      servicesHeading: 'How can we help?'
+    },
+    shop: {
+      title: 'Welcome to the PAZ shop.',
+      servicesHeading: 'Explore the marketplace'
+    },
+    booking: {
+      title: 'Need help with your booking?',
+      servicesHeading: 'Your next step'
+    }
+  }[context];
+  const greeting = `Hi. ${timeGreeting}. My name is Mentor Charles. How can I help you today?`;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsVisible(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return undefined;
+
+    const greetingTimer = window.setTimeout(() => setStep(1), 2000);
+    const nextStepTimer = window.setTimeout(() => setStep(2), 5500);
+    return () => {
+      window.clearTimeout(greetingTimer);
+      window.clearTimeout(nextStepTimer);
+    };
+  }, [isVisible]);
+
+  if (!isVisible || isDismissed) return null;
+
+  return (
+    <aside className={`home-help-guide ${context === 'booking' ? 'home-help-guide-booking' : ''}`} aria-label="Mentor Charles PAZ guide">
+      {step === 1 && (
+        <section className="home-help-bubble home-help-greeting" aria-live="polite">
+          <button
+            type="button"
+            className="home-help-dismiss"
+            aria-label="Dismiss Mentor Charles guide"
+            onClick={() => setIsDismissed(true)}
+          >
+            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+          <span className="home-help-eyebrow">Your PAZ guide</span>
+          <p>{greeting}</p>
+        </section>
+      )}
+      {step >= 2 && (
+        <section className="home-help-bubble home-help-next-step" aria-live="polite">
+          <h2>{contextCopy.title}</h2>
+          <h3 className="home-help-services-heading">{contextCopy.servicesHeading}</h3>
+          <nav className="home-help-services-grid" aria-label="PAZ Thriving Tribe services">
+            {services.map((service) => (
+              <Link
+                key={service.title}
+                to={service.path}
+                className="home-help-service-link"
+                onClick={() => setIsDismissed(true)}
+              >
+                <span className="home-help-service-icon" aria-hidden="true">
+                  <i className={service.icon}></i>
+                </span>
+                <span className="home-help-service-copy">
+                  <strong>{service.title}</strong>
+                  <small>{service.description}</small>
+                </span>
+                <span className="home-help-service-action">
+                  {service.action} <i className="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                </span>
+              </Link>
+            ))}
+          </nav>
+          <button
+            type="button"
+            className="home-help-dismiss home-help-dismiss-next"
+            aria-label="Dismiss Mentor Charles guide"
+            onClick={() => setIsDismissed(true)}
+          >
+            <i className="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </section>
+      )}
+      <img className="home-help-robot" src="/mentor-charles-robot.png" alt="Mentor Charles, your PAZ guide" />
+    </aside>
+  );
+}
+
+// =========================================================================
+// MAIN UNIFIED APPLICATION WITH DEDICATED SERVICE PAGES & INTAKE FORMS
+// =========================================================================
+function App() {
+  if (import.meta.env.PROD && import.meta.env.VITE_MAINTENANCE_MODE !== 'false') {
+    return <Suspense fallback={null}><MaintenancePage /></Suspense>;
+  }
+  return <AppApplication />;
+}
+
+export default App;
+
+function AppApplication() {
+  const [nigeriaDate, setNigeriaDate] = useState(getNigeriaDateInfo);
+  const independenceAnniversary = nigeriaDate.year - 1960;
+  const [navOpen, setNavOpen] = useState(false);
+  const [whatsappTipIndex, setWhatsappTipIndex] = useState(0);
+  const [showWhatsappTip, setShowWhatsappTip] = useState(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [activeLegalPolicy, setActiveLegalPolicy] = useState(null);
+  const [heroPopupMode, setHeroPopupMode] = useState(null); // 'register' | 'booking' | null
+  const [cookieConsentAccepted, setCookieConsentAccepted] = useState(false);
+  const [showCookieBanner, setShowCookieBanner] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const logoImageUrl = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"%3E%3Crect width="48" height="48" rx="12" fill="%23238636"/%3E%3Ctext x="50%" y="55%" font-size="26" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-weight="700"%3EP%3C/text%3E%3C/svg%3E';
+  // --- Auth & System Loading States ---
+  const [session, setSession] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminAccessLoading, setAdminAccessLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    const pathname = location.pathname.replace(/\/+$/, '') || '/';
+    const isShopProduct = pathname.startsWith('/shop/');
+    const productName = isShopProduct
+      ? pathname.split('/').filter(Boolean).at(-1).replace(/[-_]+/g, ' ')
+      : '';
+    const page = seoPages[pathname] || (isShopProduct
+      ? {
+          title: `${productName.replace(/\b\w/g, (letter) => letter.toUpperCase())} | PAZ Thriving Tribe Shop`,
+          description: 'Explore practical personal growth, family and teen resources from PAZ Thriving Tribe.'
+        }
+      : null);
+    const isPrivateOrUnavailable = noIndexPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+    const shouldIndex = Boolean(page) && !isPrivateOrUnavailable;
+    const title = page?.title || 'PAZ Thriving Tribe';
+    const description = page?.description || 'PAZ Thriving Tribe offers personal growth, coaching, mentoring and practical support for women, teens and families.';
+    const canonicalUrl = `https://pazthrivingtribe.org${pathname === '/' ? '/' : pathname}`;
+    const setMetaContent = (selector, attribute, value, createTag) => {
+      let element = document.head.querySelector(selector);
+      if (!element) {
+        element = document.createElement('meta');
+        createTag(element);
+        document.head.appendChild(element);
+      }
+      element.setAttribute(attribute, value);
+    };
+
+    document.title = title;
+    setMetaContent('meta[name="description"]', 'content', description, (element) => element.setAttribute('name', 'description'));
+    setMetaContent('meta[name="robots"]', 'content', shouldIndex ? 'index, follow' : 'noindex, follow', (element) => element.setAttribute('name', 'robots'));
+    setMetaContent('meta[property="og:title"]', 'content', title, (element) => element.setAttribute('property', 'og:title'));
+    setMetaContent('meta[property="og:description"]', 'content', description, (element) => element.setAttribute('property', 'og:description'));
+    setMetaContent('meta[property="og:url"]', 'content', canonicalUrl, (element) => element.setAttribute('property', 'og:url'));
+    setMetaContent('meta[name="twitter:title"]', 'content', title, (element) => element.setAttribute('name', 'twitter:title'));
+    setMetaContent('meta[name="twitter:description"]', 'content', description, (element) => element.setAttribute('name', 'twitter:description'));
+
+    let canonical = document.head.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute('href', canonicalUrl);
+  }, [location.pathname]);
+  useEffect(() => {
+    const openLegalPolicy = (event) => {
+      const policy = event.detail?.policy;
+      if (policy === 'terms' || policy === 'privacy') setActiveLegalPolicy(policy);
+    };
+    window.addEventListener('paz-open-legal-policy', openLegalPolicy);
+    return () => window.removeEventListener('paz-open-legal-policy', openLegalPolicy);
+  }, []);
+  const isIndependencePreview = new URLSearchParams(location.search).get('independencePreview') === '1';
+  const isIndependenceDay = (nigeriaDate.month === 10 && nigeriaDate.day === 1) || isIndependencePreview;
+  const withIndependencePreview = (path) => isIndependencePreview
+    ? `${path}${path.includes('?') ? '&' : '?'}independencePreview=1`
+    : path;
+  const independenceNavStyle = isIndependenceDay
+    ? { background: '#008751', borderColor: '#006b40', color: '#ffffff', transition: 'none' }
+    : undefined;
+  const isRegistrationRoute = ['/teens_reg', '/teens-reg'].includes(location.pathname);
+  const isAdminRoute = location.pathname.startsWith('/admin') || location.pathname.startsWith('/dashboard');
+  const isVendorRoute = location.pathname === '/vendor';
+  const isFeedbackRoute = location.pathname === '/feedback';
+  const isStoreRoute = location.pathname === '/shop' || location.pathname.startsWith('/shop/');
+  const isShopMenuActive = isStoreRoute;
+
+  useEffect(() => {
+    let scrollTimer;
+    const initialViewportHeight = window.visualViewport?.height || window.innerHeight;
+    const viewport = window.visualViewport;
+    const syncVisualViewport = () => {
+      document.documentElement.style.setProperty('--app-visual-viewport-height', `${viewport?.height || window.innerHeight}px`);
+      document.documentElement.style.setProperty('--app-visual-viewport-offset-top', `${viewport?.offsetTop || 0}px`);
+    };
+    const keepFocusedFieldVisible = () => {
+      syncVisualViewport();
+      window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
+        const field = document.activeElement;
+        if (!(field instanceof HTMLElement) || !field.matches('input, textarea, select, [contenteditable="true"]')) return;
+        if (viewport && viewport.height >= initialViewportHeight * 0.8) return;
+        field.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      }, 120);
+    };
+    syncVisualViewport();
+    document.addEventListener('focusin', keepFocusedFieldVisible);
+    viewport?.addEventListener('resize', keepFocusedFieldVisible);
+    viewport?.addEventListener('scroll', syncVisualViewport);
+    return () => {
+      window.clearTimeout(scrollTimer);
+      document.removeEventListener('focusin', keepFocusedFieldVisible);
+      viewport?.removeEventListener('resize', keepFocusedFieldVisible);
+      viewport?.removeEventListener('scroll', syncVisualViewport);
+      document.documentElement.style.removeProperty('--app-visual-viewport-height');
+      document.documentElement.style.removeProperty('--app-visual-viewport-offset-top');
+    };
+  }, []);
+
+  useEffect(() => {
+    const dateRefresh = window.setInterval(() => {
+      const nextDate = getNigeriaDateInfo();
+      setNigeriaDate((currentDate) => (
+        currentDate.year === nextDate.year && currentDate.month === nextDate.month && currentDate.day === nextDate.day
+          ? currentDate
+          : nextDate
+      ));
+    }, 15000);
+    return () => window.clearInterval(dateRefresh);
+  }, []);
+
+  useEffect(() => {
+    if (!isIndependenceDay || initialLoading || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+
+    const flagShape = confetti.shapeFromText({ text: '🇳🇬', scalar: 1.5 });
+    const anniversaryShape = confetti.shapeFromText({ text: `9JA@${independenceAnniversary}`, scalar: 1.8 });
+    const launchRegularFireworks = () => {
+      const origin = { x: 0.12 + Math.random() * 0.76, y: 0.5 + Math.random() * 0.2 };
+      confetti({
+        particleCount: 36,
+        spread: 360,
+        startVelocity: 34,
+        gravity: 0.8,
+        ticks: 150,
+        origin,
+        colors: ['#008751', '#ffffff'],
+        shapes: [flagShape],
+        scalar: 1.4,
+        disableForReducedMotion: true
+      });
+      confetti({
+        particleCount: 1,
+        spread: 70,
+        startVelocity: 26,
+        gravity: 0.8,
+        ticks: 150,
+        origin: { x: origin.x, y: Math.max(0.25, origin.y - 0.18) },
+        colors: ['#008751', '#ffffff'],
+        shapes: [anniversaryShape],
+        scalar: 1.25,
+        flat: true,
+        disableForReducedMotion: true
+      });
+    };
+
+    const launchOpeningFireworks = () => {
+      [0.18, 0.5, 0.82].forEach((x, index) => {
+        confetti({
+          particleCount: 48,
+          spread: 360,
+          startVelocity: 48,
+          gravity: 0.72,
+          ticks: 190,
+          origin: { x, y: index === 1 ? 0.42 : 0.54 },
+          colors: ['#008751', '#ffffff'],
+          shapes: [flagShape],
+          scalar: 1.7,
+          disableForReducedMotion: true
+        });
+      });
+      confetti({
+        particleCount: 2,
+        spread: 100,
+        startVelocity: 32,
+        gravity: 0.7,
+        ticks: 190,
+        origin: { x: 0.5, y: 0.34 },
+        colors: ['#008751', '#ffffff'],
+        shapes: [anniversaryShape],
+        scalar: 1.55,
+        flat: true,
+        disableForReducedMotion: true
+      });
+    };
+
+    launchOpeningFireworks();
+    const fireworksInterval = window.setInterval(launchRegularFireworks, 8000);
+    return () => window.clearInterval(fireworksInterval);
+  }, [isIndependenceDay, initialLoading, independenceAnniversary]);
+
+  const verifyAdminAccess = async (currentSession) => {
+    if (!currentSession?.access_token) {
+      setIsAdmin(false);
+      adminDataLoadedForRef.current = null;
+      return false;
+    }
+    setAdminAccessLoading(true);
+    try {
+      const response = await fetch('/api/admin-access', {
+        headers: { Authorization: `Bearer ${currentSession.access_token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      const authorized = response.ok && payload.isAdmin === true;
+      setIsAdmin(authorized);
+      const userId = currentSession.user?.id;
+      if (authorized && userId && adminDataLoadedForRef.current !== userId) {
+        adminDataLoadedForRef.current = userId;
+        void fetchDynamicWebsiteContent().then((loaded) => {
+          if (!loaded && adminDataLoadedForRef.current === userId) {
+            adminDataLoadedForRef.current = null;
+          }
+        });
+      } else if (!authorized) {
+        adminDataLoadedForRef.current = null;
+      }
+      return authorized;
+    } catch (error) {
+      console.error('Admin access check failed:', error);
+      setIsAdmin(false);
+      return false;
+    } finally {
+      setAdminAccessLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    const frameId = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [location.pathname, location.search, location.hash, location.key]);
+
+  useEffect(() => {
+    if (isAdminRoute) return;
+
+    let sessionId = '';
+    try {
+      sessionId = localStorage.getItem('paz-visitor-session-id') || '';
+      if (!sessionId) {
+        sessionId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem('paz-visitor-session-id', sessionId);
+      }
+    } catch (error) {
+      try {
+        sessionId = sessionStorage.getItem('paz-visitor-session-id') || '';
+        if (!sessionId) {
+          sessionId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          sessionStorage.setItem('paz-visitor-session-id', sessionId);
+        }
+      } catch (storageError) {
+        sessionId = `temporary-${Date.now()}`;
+      }
+    }
+
+    const queryProduct = new URLSearchParams(location.search).get('product');
+    const directProductRoute = location.pathname.match(/^\/shop\/([^/]+)\/?$/i);
+    const routeProduct = directProductRoute?.[1] || (location.pathname === '/shop' ? queryProduct : '');
+    let decodedProductRoute = String(routeProduct || '').trim();
+    try {
+      decodedProductRoute = decodeURIComponent(decodedProductRoute);
+    } catch {}
+    const trackedProductSlug = decodedProductRoute
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const isProductRoute = Boolean(directProductRoute || (location.pathname === '/shop' && queryProduct)) && Boolean(trackedProductSlug);
+    const trackedPath = isProductRoute ? `/shop/${trackedProductSlug}` : location.pathname;
+    const productViewKey = `paz-product-view:${sessionId}:${trackedPath}`;
+    let productViewStorage = null;
+    if (isProductRoute) {
+      try {
+        productViewStorage = window.localStorage;
+        if (productViewStorage.getItem(productViewKey)) return;
+      } catch (error) {
+        try {
+          productViewStorage = window.sessionStorage;
+          if (productViewStorage.getItem(productViewKey)) return;
+        } catch (storageError) {
+          productViewStorage = null;
+        }
+      }
+      try {
+        productViewStorage?.setItem(productViewKey, '1');
+      } catch (storageError) {
+        productViewStorage = null;
+      }
+    }
+
+    fetch('/api/track-visitor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({ path: trackedPath, sessionId })
+    }).then((response) => {
+      if (!response.ok) throw new Error('Visitor tracking request failed');
+    }).catch((error) => {
+      if (isProductRoute) productViewStorage?.removeItem(productViewKey);
+      console.debug('Visitor tracking unavailable:', error);
+    });
+  }, [isAdminRoute, location.pathname, location.search]);
+
+  const defaultStoreProducts = [
+    { id: 'ebook-confidence', title: 'Confidence for Teens', description: 'A step-by-step digital guide to help young people build confidence, healthy habits, and emotional resilience.', price: 5500, category: 'Ebook', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 245 },
+    { id: 'ebook-parent-guide', title: 'Thriving Parent Guide', description: 'Practical strategies for communication, boundaries, and positive family routines with everyday life examples.', price: 7000, category: 'Guide', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 156 },
+    { id: 'digital-workbook', title: 'Purpose Planner Workbook', description: 'A printable workbook for self-discovery, goal setting, and building a more intentional life.', price: 4500, category: 'Workbook', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 312 },
+    { id: 'family-routine-kit', title: 'Family Routine Kit', description: 'A practical planner for mornings, chores, family rhythms, and calmer home routines.', price: 6200, category: 'Planner', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 120 },
+    { id: 'mindful-moments', title: 'Mindful Moments Journal', description: 'A guided reflection journal for emotional regulation, gratitude, and self-awareness.', price: 4800, category: 'Journal', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 84 },
+    { id: 'teen-vision-board', title: 'Teen Vision Board Pack', description: 'Design and goal-setting activities that help young people dream bigger and act with intention.', price: 5300, category: 'Workbook', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 142 },
+    { id: 'boundaries-bundle', title: 'Boundaries Bundle', description: 'A supportive toolkit for healthy conversations, personal limits, and respectful relationships.', price: 6700, category: 'Guide', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 77 },
+    { id: 'purpose-pathway', title: 'Purpose Pathway Mini Course', description: 'A short digital course that helps users discover their values, strengths, and next steps.', price: 8200, category: 'Course', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 93 },
+    { id: 'calm-parenting', title: 'Calm Parenting Playbook', description: 'Simple routines and scripts for more patience, connection, and calm in everyday parenting.', price: 7100, category: 'Guide', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 131 },
+    { id: 'summer-growth-plan', title: 'Summer Growth Plan', description: 'A seasonal planner that helps families set meaningful goals, habits, and joyful wins.', price: 5900, category: 'Planner', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 108 },
+    { id: 'decision-making-guide', title: 'Smart Decision Making Guide', description: 'Learn frameworks and strategies for making sound decisions that align with your values and goals.', price: 6300, category: 'Guide', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 98 },
+    { id: 'passion-discovery', title: 'Passion & Purpose Discovery Workbook', description: 'Explore your interests and talents to discover your true passion and life purpose.', price: 5100, category: 'Workbook', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 142 },
+    { id: 'habit-builder-kit', title: 'Habit Builder Starter Kit', description: 'Create sustainable routines with mini plans, reflection prompts, and motivation trackers.', price: 5400, category: 'Planner', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 116 },
+    { id: 'parent-reset', title: 'Parent Reset Journal', description: 'A simple reflection tool to help parents reset and reconnect with calmer routines.', price: 4900, category: 'Journal', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 103 },
+    { id: 'rooting-identity', title: 'Rooting in Identity', description: 'A guided resource to help teens understand identity, values, and belonging in everyday life.', price: 6800, category: 'Ebook', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 89 },
+    { id: 'family-rituals', title: 'Family Rituals Planner', description: 'Design meaningful rituals that build connection and belonging across family life.', price: 6100, category: 'Planner', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 92 },
+    { id: 'teen-balance', title: 'Teen Balance Blueprint', description: 'A focused digital toolkit for balancing school, rest, boundaries, and personal growth.', price: 7200, category: 'Guide', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 72 },
+    { id: 'resilience-workbook', title: 'Resilience Reset Workbook', description: 'Build emotional resilience with small actions, practical check-ins, and gentle reflection.', price: 5600, category: 'Workbook', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 127 },
+    { id: 'focus-fuel', title: 'Focus Fuel Mini Guide', description: 'A short guide for creating systems that help individuals stay grounded, focused, and intentional.', price: 4700, category: 'Guide', cover: '/logo/logo2.jpeg', fileUrl: '', inStock: true, stockCount: 164 },
+    { id: 'thriving-teen-kit', title: 'Thriving Teen Starter Kit', description: 'A combination of checklists, prompts, and routines to support growth and confidence in everyday life.', price: 7600, category: 'Course', cover: '/logo/logomain.png', fileUrl: '', inStock: true, stockCount: 58 }
+  ];
+
+  const defaultStoreBankAccount = {
+    bankName: 'Access Bank',
+    accountName: 'Paz Thriving Tribe',
+    accountNumber: '0012345678',
+    accountType: 'Savings',
+    swiftCode: 'ABNGNGLA',
+    note: 'Please include your order name and email in the transfer narration.'
+  };
+
+  const [storeProducts, setStoreProducts] = useState(defaultStoreProducts);
+
+  const [storeBankAccount, setStoreBankAccount] = useState(() => {
+    try {
+      const savedBank = JSON.parse(localStorage.getItem('paz_store_bank_account') || 'null');
+      return savedBank || defaultStoreBankAccount;
+    } catch (error) {
+      return defaultStoreBankAccount;
+    }
+  });
+
+  const [shopOrders, setShopOrders] = useState(() => {
+    try {
+      const savedOrders = JSON.parse(localStorage.getItem('paz_shop_orders') || '[]');
+      return Array.isArray(savedOrders) ? savedOrders : [];
+    } catch (error) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('paz_store_bank_account', JSON.stringify(storeBankAccount));
+  }, [storeBankAccount]);
+
+  useEffect(() => {
+    localStorage.setItem('paz_shop_orders', JSON.stringify(shopOrders));
+  }, [shopOrders]);
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState(null);
+  const [enrollments, setEnrollments] = useState({});
+  const [bookingForm, setBookingForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    clientType: 'Individual',
+    sessionType: 'Virtual',
+    preferredTime: 'Any time',
+    concern: ''
+  });
+  const [bookingSubmitted, setBookingSubmitted] = useState(false);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    name: '',
+    email: '',
+    subject: '',
+    message: ''
+  });
+  const [bookings, setBookings] = useState([]);
+  const [contactMessages, setContactMessages] = useState([]);
+  const [parentFeedback, setParentFeedback] = useState([]);
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const adminDataLoadedForRef = useRef(null);
+
+  const handleContactFormSubmit = async (event) => {
+    event.preventDefault();
+    if (contactSubmitting) return;
+    setContactSubmitting(true);
+    const messagePayload = {
+      name: contactForm.name.trim(),
+      email: contactForm.email.trim(),
+      subject: contactForm.subject.trim(),
+      message: contactForm.message.trim()
+    };
+
+    try {
+      const { error } = await supabase.from('tribe_contact_messages').insert([messagePayload]);
+      if (error) throw error;
+
+      const savedMessage = { ...messagePayload, id: `contact-${Date.now()}`, createdAt: new Date().toISOString() };
+      setContactMessages((prev) => [savedMessage, ...prev]);
+      void notifyAdminActivity('Contact message', 'New contact message', savedMessage);
+      setContactForm({ name: '', email: '', subject: '', message: '' });
+      setToastMessage('Your message has been received and will be reviewed by the team shortly.');
+      setToastType('success');
+    } catch (error) {
+      console.error('Contact message could not be saved:', error);
+      setToastMessage('Your message could not be submitted. Please try again.');
+      setToastType('error');
+    } finally {
+      setContactSubmitting(false);
+    }
+  };
+
+  // --- Sliding Hero Banner States (Main Page) ---
+  const [currentHomeSlide, setCurrentHomeSlide] = useState(0);
+  const [currentPromoSlide, setCurrentPromoSlide] = useState(0);
+  const [selectedReview, setSelectedReview] = useState(null);
+  const [testimonialSubmitting, setTestimonialSubmitting] = useState(false);
+  const [expandedFaqIndex, setExpandedFaqIndex] = useState(0);
+  const [promoSlideAutoPlay, setPromoSlideAutoPlay] = useState(true);
+  const [testimonialCount, setTestimonialCount] = useState(null);
+  const [promoSlides, setPromoSlides] = useState([
+    {
+      title: 'Jojo’s Mom',
+      text: "Ms. Rosaline has been a truly exceptional tutor and coach for my 10-year-old daughter. My daughter will have her 9th class this week. From the beginning, she created a fun, warm, and engaging environment that made my daughter genuinely excited for every lesson—often looking forward to it even before it starts. What makes Ms. Rosaline stand out is her real impact. She has played a major role in building my daughter’s personality—developing her sense of responsibility and, most importantly, her inner motivation. Today, my daughter attends her classes because she wants to, not because I ask her to—and that, to me, is incredibly valuable. Through her constant encouragement, positivity, and genuine care, Ms. Rosaline has helped my daughter grow in confidence, independence, self-love, and communication. She also nurtures leadership skills and teaches children how to handle different life situations with confidence and awareness. Her dedication, patience, and uplifting spirit truly make a lasting difference. I’m deeply grateful for her efforts and highly recommend her as an inspiring and impactful life coach for children.",
+      image: "/logo/logo2.jpeg",
+      imageType: 'logo'
+    },
+    { 
+      title: 'Chukwunonso',
+      text: 'Good evening Coach Roseline thank you for the things you have done for me, my grades are improving now.',
+      image: "/logo/logo2.jpeg",
+      imageType: 'logo'
+    },
+    {
+      title: "A and A's Dad",
+      text: 'Thank You hope they are making progress in line with the schedule. They enjoyed their sessions.',
+      image: "/logo/logo2.jpeg",
+      imageType: 'logo'
+    }
+  ]);
+
+  const parentNoticeItems = [
+    {
+      icon: 'fa-solid fa-leaf',
+      title: 'A calmer household rhythm',
+      description: 'Parents notice more ease in daily routines as family conversations become purposeful and predictable.'
+    },
+    {
+      icon: 'fa-solid fa-comments',
+      title: 'Clear communication habits',
+      description: 'Small conflicts are resolved sooner because every member is learning how to share needs with respect.'
+    },
+    {
+      icon: 'fa-solid fa-brain',
+      title: 'Stronger emotional confidence',
+      description: 'Children and teenagers begin showing improved self-awareness, focus, and emotional composure.'
+    },
+    {
+      icon: 'fa-solid fa-calendar-check',
+      title: 'Visible progress markers',
+      description: 'Parents track real milestones and feel the difference in family connection from week to week.'
+    },
+    {
+      icon: 'fa-solid fa-handshake-angle',
+      title: 'More aligned family teamwork',
+      description: 'Every household member becomes a partner in the journey, creating steady momentum across home life.',
+    }
+  ];
+
+  const faqItems = [
+    {
+      question: 'How do I get started with Paz Thriving Tribe coaching?',
+      answer: 'Getting started is simple! Visit our services page, select the program that fits your needs (Talk & Thrive, Teens Academy,  etc.), and fill out the intake form. Our team will reach out within 24-48 hours to confirm your session details and answer any questions.'
+    },
+    {
+      question: 'What are your coaching session rates and payment options?',
+      answer: 'Our pricing varies by program and session type. We offer flexible payment plans including monthly subscriptions, quarterly packages, and one-time sessions. For detailed pricing information, please contact us directly or visit the specific program page you\'re interested in.'
+    },
+    {
+      question: 'Are sessions conducted online or in-person?',
+      answer: 'We offer both online and in-person sessions to accommodate your schedule and preferences. During booking, you can select your preferred session format. Virtual sessions are conducted via secure video conferencing, and in-person sessions are available at select locations.'
+    },
+    {
+      question: 'Is everything discussed in coaching sessions confidential?',
+      answer: 'Absolutely. Confidentiality is a core value at Paz Thriving Tribe. Everything shared during coaching sessions is strictly confidential, except in cases where there\'s risk of harm. We maintain professional privacy standards and GDPR compliance in all interactions.'
+    },
+    {
+      question: 'How long does it take to see results from coaching?',
+      answer: 'Results vary based on individual circumstances and goals. Many clients notice positive shifts in their mindset and behavior within 2-4 weeks. Deeper transformation typically emerges over 8-12 weeks of consistent engagement. We\'re committed to supporting your journey at your pace.'
+    },
+    {
+      question: 'Can I book a session for my teenager or child?',
+      answer: 'Yes! We offer specialized programs for teenagers (Thriving Pre-teens & Teens Academy) and children (Thriving Children Services). These programs are tailored to age-appropriate needs with parental involvement options. Book through our services page or contact us for guidance on the best fit for your child.'
+    }
+  ];
+
+  const independenceCampaignSlide = {
+    title: 'Nigeria’s Independence Day',
+    subtitle: 'Celebrating the strength, diversity, and shared future of our nation this 1 October.',
+    eyebrow: '1 OCTOBER · INDEPENDENCE DAY',
+    image: '/image/nigeria-independence-flag.svg',
+    imageAlt: 'Nigeria’s green-white-green independence flag',
+    slideClassName: 'hero-independence-day-bg',
+    independenceDay: true,
+    hideAction: true
+  };
+  const campaignHomeSlides = [
+    ...(isIndependenceDay ? [independenceCampaignSlide] : [])
+  ];
+  const independenceHistorySlides = getIndependenceDaySlides(independenceAnniversary).map((slide) => ({
+    title: slide.title,
+    subtitle: slide.tagline,
+    eyebrow: slide.eyebrow,
+    image: slide.image,
+    imageAlt: slide.imageAlt,
+    slideClassName: 'hero-independence-day-bg',
+    independenceDay: true,
+    hideAction: true
+  }));
+  const standardHomeSlides = [
+    {
+      title: "Paz Thriving Tribe",
+      subtitle: "Coaching, Mentoring and Counselling Organization.",
+      image: "/logo/logo2.jpeg",
+      imageType: 'logo'
+    },
+    {
+      title: "Building Positive Values.",
+      subtitle: "Helping you Build values you need to thrive.",
+      image: "./image/pic2.png"
+    },
+    {
+      title: "Coaching and Mentoring",
+      subtitle: "Empowering you with core values to reach your full potential.",
+      image: "./image/pic3.png"
+    },
+    {
+      title: "Need Someone to Talk To?",
+      subtitle: "Paz Thriving Tribe offers a safe and confidential space where you can talk and be heard.",
+      image: "./image/pic7.png",
+      slideClassName: 'hero-slide-pic7'
+    },
+    {
+      title: "Share Your Feedback",
+      subtitle: "Tell us what is changing for your family so we can celebrate progress and keep improving the support we offer.",
+      image: "./image/pic8.png",
+      slideClassName: 'hero-slide-feedback'
+    },
+    {
+      title: "We Also Offer Church Coaching Sessions",
+      subtitle: "Empowering young congregants with spiritual growth, character development, and meaningful mentorship in a faith-centered community.",
+      image: "./image/pic11.png"
+    },
+    {
+      title: "Structured Teens Development Program",
+      subtitle: "Supportive and Structured approach that helps children, teenagers and young adults develop essential life skills, build self-confidence and navigate life challenges.",
+      image: "./image/pic5.png"
+    },
+    {
+      title: "                             ",
+      subtitle: "                          ",
+      image: "./image/pic6.png",
+      imageType: 'contain'
+    },
+  ];
+  const homeSlides = [
+    ...campaignHomeSlides,
+    ...(isIndependenceDay ? independenceHistorySlides : standardHomeSlides)
+  ];
+
+  const homeHighlights = [
+    {
+      icon: 'fa-solid fa-people-group',
+      title: 'Family-centred coaching',
+      text: 'Support for women, parents, teens, and young adults through guidance that feels practical, calm, and personal.'
+    },
+    {
+      icon: 'fa-solid fa-star',
+      title: 'Clear, structured growth',
+      text: 'Every pathway is designed to build confidence, responsibility, and long-term habits in a simple format.'
+    },
+    {
+      icon: 'fa-solid fa-hand-holding-heart',
+      title: 'A safe space to thrive',
+      text: 'A warm environment for reflection, mentoring, emotional support, and next-step planning.'
+    }
+  ];
+
+  // --- Core Content State (Restored Baseline Titles) ---
+  const [services, setServices] = useState({
+    family: {
+      slug: "family",
+      title: "Thriving Parents",
+      subtitle: "Single Women Empowerment & Personal Development",
+      description: "We equip you with practical parenting training, guide, and a supportive community to raise children who will thrive.We achieve this through sessions, real talk, tools you can use at home for a result oriented journey.",
+      metricCount: "120+ Women Empowered"
+    },
+    marriage: {
+      slug: "marriage",
+      title: "Thriving Women",
+      subtitle: "Women's Community & Collective Growth",
+      description: "Building thriving communities of women through structured mentorship, shared experiences, and collective empowerment programs designed to strengthen relationships and cultivate lasting sisterhood.",
+      metricCount: "450+ Women Connected"
+    },
+    children: {
+      slug: "children",
+      title: "Thriving Pre-teen & Teens",
+      subtitle: "Dedicated Mentors & Youth Development Programs",
+      description: "Guiding pre-teens and teenagers via one-on-one professional mentorship frameworks designed to build confidence, self-reliance, character development, and cognitive emotional stability.",
+      metricCount: "310+ Teens Mentored"
+    }
+  });
+
+  // --- State for Founder's Suite Interactive Multi-Message ---
+  const [founderActiveTab, setFounderActiveTab] = useState('speech');
+  const founderTabsList = ['speech', 'about', 'values'];
+
+  // --- Rotating Intro Text for the Highlights Section ---
+  const [introTextMode, setIntroTextMode] = useState('heading');
+
+  useEffect(() => {
+    const introTimer = window.setInterval(() => {
+      setIntroTextMode((currentMode) => (currentMode === 'heading' ? 'paragraph' : 'heading'));
+    }, 9000);
+
+    return () => window.clearInterval(introTimer);
+  }, []);
+
+  // --- State for Auto-Sliding Mission & Vision Statements ---
+  const [activeStatementIndex, setActiveStatementIndex] = useState(0);
+  const statements = [
+    {
+      type: "Our Mission Statement",
+      heading: "Engineering Healthy Connections Across Generations",
+      text: "To be a leading provider of professional life coaching that empowers children, teenagers, parents, and organizations to achieve lasting personal growth, deeper self-awareness, and unshakable resilience.",
+      icon: "fa-solid fa-crosshairs"
+    },
+    {
+      type: "Our Vision Statement",
+      heading: "Setting the Global Standard for Systemic Family Health",
+      text: "To provide professional life coaching services that fosterp ersonal growth, self-awareness, and resilience in children, teenagers, parents, and organizations.",
+      icon: "fa-solid fa-wand-magic-sparkles"
+    }
+  ];
+  const [socialEditTarget, setSocialEditTarget] = useState('YouTube');
+  const [socialPreviewTitle, setSocialPreviewTitle] = useState('');
+  const [socialPreviewSummary, setSocialPreviewSummary] = useState('');
+  const [socialPreviewBadgeText, setSocialPreviewBadgeText] = useState('');
+  const [socialPreviewTimestamp, setSocialPreviewTimestamp] = useState('Posted 4 hours ago');
+  const [socialPreviewUrl, setSocialPreviewUrl] = useState('https://youtube.com/shorts/-vOSeWpU1Xs?feature=share');
+  const [socialPreviewEmbedUrl, setSocialPreviewEmbedUrl] = useState('https://www.youtube.com/embed/-vOSeWpU1Xs');
+  const [socialMetadataLoading, setSocialMetadataLoading] = useState(false);
+  const [youtubeEmbedUrl, setYoutubeEmbedUrl] = useState('https://www.youtube.com/embed/-vOSeWpU1Xs');
+  const [activeYoutubeIndex, setActiveYoutubeIndex] = useState(0);
+  const youtubePlayerContainerRef = useRef(null);
+  const youtubeAutoplayNextRef = useRef(false);
+  const defaultYoutubeVideo = {
+    id: 'default-teachable-moment',
+    platform: 'YouTube',
+    icon: 'fa-brands fa-youtube',
+    color: '#FF0000',
+    badgeText: 'Teachable Moments',
+    title: 'Teachable Moments with Coach Roseline',
+    summary: 'Watch the latest message from Coach Roseline.',
+    timestamp: 'Featured video',
+    targetUrl: 'https://youtube.com/shorts/-vOSeWpU1Xs?feature=share',
+    embedUrl: 'https://www.youtube.com/embed/-vOSeWpU1Xs',
+    published: true,
+  };
+
+  // --- State for Auto-Sliding Social Media News Updates Screen ---
+  const [activeNewsIndex, setActiveNewsIndex] = useState(0);
+  const [socialNewsFeed, setSocialNewsFeed] = useState([
+    {
+      platform: "Facebook",
+      icon: "fa-brands fa-facebook",
+      color: "#1877F2",
+      badgeText: "Latest Community Article",
+      title: "Rebuilding the Foundations of Family Communication",
+      summary: "Read our latest exhaustive essay detailing how daily micro-habits and intentional structural conversations can break generational cycle barriers. Over 2.4k community shares this week.",
+      timestamp: "Posted 4 hours ago",
+      targetUrl: "https://web.facebook.com/profile.php?id=61590838730835"
+    },
+    {
+      platform: "Instagram",
+      icon: "fa-brands fa-instagram",
+      color: "#E1306C",
+      badgeText: "Media Spotlight & Reel",
+      title: "Cognitive Tools for Modern Teenage Mentorship",
+      summary: "Slide through our recent visual toolkit graphics outlining three actionable methods to guide teenagers through emotional volatility and self-reliance development milestones.",
+      timestamp: "Posted 1 day ago",
+      targetUrl: "https://instagram.com/pazthriving"
+    },
+    // {
+    //   icon: "fa-brands fa-youtube",
+    //   color: "#FF0000",
+    //   badgeText: "Featured Masterclass Broadcast",
+    //   title: "Marriage Alignment Frameworks: Annual Summit Highlights",
+    //   summary: "Watch the full 45-minute premium streaming segment breaking down advanced relationship intake assessments, milestone mapping, and interactive couple exercises.",
+    //   timestamp: "Streamed 3 days ago",
+    //   targetUrl: "https://youtube.com/shorts/-vOSeWpU1Xs?feature=share"
+    // }
+  ]);
+
+  const publishedYoutubeVideos = socialNewsFeed
+    .filter((item) => item.platform === 'YouTube' && item.published !== false && (item.embedUrl || item.targetUrl))
+    .sort((left, right) => {
+      const leftDate = new Date(left.publishedAt || left.updatedAt || left.createdAt || 0).getTime();
+      const rightDate = new Date(right.publishedAt || right.updatedAt || right.createdAt || 0).getTime();
+      return rightDate - leftDate;
+    });
+  const youtubeVideos = publishedYoutubeVideos.length > 0 ? publishedYoutubeVideos : [defaultYoutubeVideo];
+  const activeYoutubeVideo = youtubeVideos[activeYoutubeIndex] || youtubeVideos[0];
+
+  useEffect(() => {
+    if (!activeYoutubeVideo?.embedUrl || !youtubePlayerContainerRef.current) return undefined;
+
+    let cancelled = false;
+    let player;
+    loadYouTubeIframeApi().then((YT) => {
+      if (cancelled || !youtubePlayerContainerRef.current) return;
+
+      const videoId = new URL(activeYoutubeVideo.embedUrl).pathname.split('/').filter(Boolean).pop();
+      if (!videoId) return;
+
+      const autoplay = youtubeAutoplayNextRef.current;
+      youtubeAutoplayNextRef.current = false;
+      player = new YT.Player(youtubePlayerContainerRef.current, {
+        videoId,
+        playerVars: { autoplay: autoplay ? 1 : 0, origin: window.location.origin },
+        events: {
+          onReady: (event) => {
+            event.target.getIframe().title = activeYoutubeVideo.title || 'Teachable Moments with Coach Roseline';
+          },
+          onStateChange: (event) => {
+            if (event.data === YT.PlayerState.ENDED && youtubeVideos.length > 1) {
+              youtubeAutoplayNextRef.current = true;
+              setActiveYoutubeIndex((current) => (current + 1) % youtubeVideos.length);
+            }
+          },
+        },
+      });
+    }).catch((error) => {
+      console.error('YouTube player could not be initialized:', error);
+    });
+
+    return () => {
+      cancelled = true;
+      player?.destroy();
+    };
+  }, [activeYoutubeIndex, activeYoutubeVideo?.embedUrl, activeYoutubeVideo?.title, location.pathname, youtubeVideos.length]);
+
+        
+
+
+  // --- CMS Admin Form Inputs ---
+  const [editTarget, setEditTarget] = useState('family');
+  const [formTitle, setFormTitle] = useState('');
+  const [formSubtitle, setFormSubtitle] = useState('');
+  const [formDesc, setFormDesc] = useState('');
+  const [formMetric, setFormMetric] = useState('');
+  const [cmsSuccessMessage, setCmsSuccessMessage] = useState(null);
+  const [cmsErrorMessage, setCmsErrorMessage] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
+  const [toastType, setToastType] = useState('success');
+  const [selectedAdminTab, setSelectedAdminTab] = useState('applicants');
+  const [privacyContent, setPrivacyContent] = useState('');
+  const [termsContent, setTermsContent] = useState('');
+  const [faqContent, setFaqContent] = useState(faqItems.map((item) => ({ ...item, linkLabel: '', linkTo: '' })));
+  const [clientActivityLog, setClientActivityLog] = useState([]);
+  const [clientActivityLoading, setClientActivityLoading] = useState(false);
+  const [refreshingDashboard, setRefreshingDashboard] = useState(false);
+
+  const updateFaqItem = (index, field, value) => {
+    setFaqContent((prev) => prev.map((item, idx) => idx === index ? { ...item, [field]: value } : item));
+  };
+
+  const handleSaveLegalAndFaqContent = async (e) => {
+    e.preventDefault();
+    try {
+      setCmsStatus('Saving legal and FAQ content...');
+      // Placeholder save logic for legal and FAQ content
+      setCmsStatus('Legal and FAQ content saved successfully.');
+    } catch (err) {
+      console.error('Failed saving legal and FAQ content:', err);
+      setCmsStatus(`Save failed: ${err?.message || err}`, true);
+    }
+  };
+
+  const [testimonialAuthor, setTestimonialAuthor] = useState('');
+  const [testimonialText, setTestimonialText] = useState('');
+  const [testimonialOrigin, setTestimonialOrigin] = useState('');
+  const [testimonialEditIndex, setTestimonialEditIndex] = useState(null);
+  const [testimonialSubmission, setTestimonialSubmission] = useState({
+    name: '',
+    origin: '',
+    message: ''
+  });
+  const [testimonialSubmitStatus, setTestimonialSubmitStatus] = useState('');
+  const [programs, setPrograms] = useState([
+    { id: 'fam-101', service: 'family', name: 'Family Communication Foundations', duration: '8 weeks', level: 'Beginner', schedule: 'Saturdays 10:00 AM', description: 'Build family communication patterns with practical exercises for every household.' },
+    { id: 'fam-102', service: 'family', name: 'Conflict Resolution Mastery', duration: '6 weeks', level: 'Intermediate', schedule: 'Wednesdays 6:00 PM', description: 'Develop the skills needed to de-escalate conflict, rebuild trust, and create healthy family rhythms.' },
+    { id: 'fam-103', service: 'family', name: 'Generational Healing Blueprint', duration: '10 weeks', level: 'Advanced', schedule: 'Sundays 3:00 PM', description: 'A deep exploration of intergenerational patterns and how to intentionally transform them.' },
+    { id: 'fam-104', service: 'family', name: 'Parenting Strategies & Emotional Resilience', duration: '8 weeks', level: 'Beginner', schedule: 'Thursdays 7:00 PM', description: 'Practical parenting modules for emotional resilience and positive discipline.' },
+    { id: 'mar-101', service: 'marriage', name: 'Couple Communication Deep Dive', duration: '6 weeks', level: 'Beginner', schedule: 'Saturdays 2:00 PM', description: 'Explore communication systems that foster emotional safety and honest connection.' },
+    { id: 'mar-102', service: 'marriage', name: 'Relationship Alignment Framework', duration: '8 weeks', level: 'Intermediate', schedule: 'Tuesdays 6:30 PM', description: 'Align your values, expectations, and long-term vision with your partner in a structured format.' },
+    { id: 'mar-103', service: 'marriage', name: 'Financial & Emotional Harmony', duration: '6 weeks', level: 'Intermediate', schedule: 'Fridays 7:00 PM', description: 'Build a shared plan for financial planning, emotional connection, and goal progress.' },
+    { id: 'mar-104', service: 'marriage', name: 'Advanced Intimacy & Connection', duration: '10 weeks', level: 'Advanced', schedule: 'Sundays 6:00 PM', description: 'Deep practice for restoring intimacy, trust, and intentional relational growth.' },
+    { id: 'kid-101', service: 'children', name: 'Cognitive Stability & Emotional Intelligence', duration: '8 weeks', level: 'Ages 10-13', schedule: 'Saturdays 11:00 AM', description: 'Young people learn tools for emotional awareness, decision-making, and resilience.' },
+    { id: 'kid-102', service: 'children', name: 'Teen Leadership & Self-Reliance', duration: '10 weeks', level: 'Ages 14-17', schedule: 'Wednesdays 4:00 PM', description: 'Develop leadership skills, personal responsibility, and healthy self-confidence.' },
+    { id: 'kid-103', service: 'children', name: 'Social Skills & Confidence Building', duration: '6 weeks', level: 'Ages 10-13', schedule: 'Mondays 5:00 PM', description: 'Support young learners in connecting well, managing emotions, and building confidence.' },
+    { id: 'kid-104', service: 'children', name: 'Mentorship & Life Planning', duration: '8 weeks', level: 'Ages 14-17', schedule: 'Thursdays 5:30 PM', description: 'Goal-setting, mentorship guidance, and planning for the next stage of life.' }
+  ]);
+  const [applicants, setApplicants] = useState([]);
+  const [programForm, setProgramForm] = useState({ service: 'family', title: '', description: '', duration: '', schedule: '', level: '' });
+  const [dashboardMessage, setDashboardMessage] = useState(null);
+  const [showHomepageIntake, setShowHomepageIntake] = useState(false);
+  const [formPassportFile, setFormPassportFile] = useState(null);
+  const [formDocumentFile, setFormDocumentFile] = useState(null);
+
+  // --- Paystack Integration Settings ---
+  const [paystackPublicKey, setPaystackPublicKey] = useState(import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_demo_key_update_from_admin');
+  const [teensKidsMonthlyFee, setTeensKidsMonthlyFee] = useState(30000);
+  const [tempPaystackKey, setTempPaystackKey] = useState(paystackPublicKey);
+  const [tempMonthlyFee, setTempMonthlyFee] = useState(teensKidsMonthlyFee);
+
+  const emailInputRef = useRef(null);
+
+  useEffect(() => {
+    if (window.PaystackPop) return undefined;
+    const existingScript = document.getElementById('paystack-inline-js');
+    if (existingScript) return undefined;
+    const script = document.createElement('script');
+    script.id = 'paystack-inline-js';
+    script.src = 'https://js.paystack.co/v1/inline.js';
+    document.body.appendChild(script);
+    return () => { script.onload = null; };
+  }, []);
+
+  useEffect(() => {
+    const selected = socialNewsFeed.find((item) => item.platform === socialEditTarget);
+    if (selected) {
+      setSocialPreviewTitle(selected.title);
+      setSocialPreviewSummary(selected.summary);
+      setSocialPreviewBadgeText(selected.badgeText);
+      setSocialPreviewTimestamp(selected.timestamp || '');
+      setSocialPreviewUrl(selected.targetUrl);
+      if (socialEditTarget === 'YouTube') {
+        setSocialPreviewEmbedUrl(selected.embedUrl || selected.targetUrl || '');
+      }
+    }
+  }, [socialEditTarget, socialNewsFeed]);
+
+  const fetchSocialUrlMetadata = async () => {
+    if (!socialPreviewUrl) {
+      setCmsStatus('Enter a valid URL before fetching metadata.', true);
+      return;
+    }
+
+    setCmsSuccessMessage(null);
+    setCmsErrorMessage(null);
+    setSocialMetadataLoading(true);
+
+    try {
+      const res = await fetch(`/api/fetch-meta?url=${encodeURIComponent(socialPreviewUrl)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to fetch metadata');
+
+      if (data.title) setSocialPreviewTitle(data.title);
+      if (data.summary) setSocialPreviewSummary(data.summary);
+      if (data.timestamp) setSocialPreviewTimestamp(data.timestamp);
+      if (data.embedUrl && socialEditTarget === 'YouTube') {
+        setSocialPreviewEmbedUrl(data.embedUrl);
+        setYoutubeEmbedUrl(data.embedUrl);
+      }
+
+      setCmsStatus('Link metadata loaded. Review and save.');
+    } catch (err) {
+      console.error('Failed fetching metadata:', err);
+      setCmsStatus(`Metadata fetch failed: ${err?.message || err}`, true);
+    } finally {
+      setSocialMetadataLoading(false);
+    }
+  };
+
+  // --- Initialization Lifecycle Hook ---
+  useEffect(() => {
+    const faLink = document.createElement('link');
+    faLink.rel = 'stylesheet';
+    faLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
+    document.head.appendChild(faLink);
+
+    const savedCookieConsent = localStorage.getItem('paz-tribe-cookie-consent');
+    if (savedCookieConsent === 'accepted' || savedCookieConsent === 'declined') {
+      setCookieConsentAccepted(savedCookieConsent === 'accepted');
+      setShowCookieBanner(false);
+    } else {
+      setShowCookieBanner(true);
+    }
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      setSession(session);
+      if (session) await verifyAdminAccess(session);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      if (!currentSession) {
+        setIsAdmin(false);
+        setAdminAccessLoading(false);
+        setLoading(false);
+        return;
+      }
+
+      void verifyAdminAccess(currentSession).finally(() => setLoading(false));
+    });
+
+    fetchDynamicWebsiteContent();
+
+    return () => {
+      if (document.head.contains(faLink)) {
+        document.head.removeChild(faLink);
+      }
+      if (subscription && typeof subscription.unsubscribe === 'function') {
+        subscription.unsubscribe();
+      }
+    };
+  }, []);
+
+  // Prevent body scroll while preloader is visible
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    if (initialLoading) document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev || ''; };
+  }, [initialLoading]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setInitialLoading(false), isIndependenceDay ? 5000 : 4200);
+    return () => window.clearTimeout(timer);
+  }, [isIndependenceDay]);
+
+  // --- Auto-Slide Interval Loops on homepage bannerHeroSlider---
+
+  useEffect(() => {
+    const homeBannerInterval = setInterval(() => {
+      setCurrentHomeSlide((prev) => (prev + 1) % homeSlides.length);
+    }, 9000);
+    return () => clearInterval(homeBannerInterval);
+  }, [homeSlides.length]);
+
+  useEffect(() => {
+    if (!promoSlideAutoPlay) return;
+    const promoInterval = setInterval(() => {
+      setCurrentPromoSlide((s) => (s + 1) % promoSlides.length);
+    }, 9000);
+    return () => clearInterval(promoInterval);
+  }, [promoSlideAutoPlay, promoSlides.length]);
+
+  useEffect(() => {
+    const founderInterval = setInterval(() => {
+      setFounderActiveTab((currentTab) => {
+        const currentIndex = founderTabsList.indexOf(currentTab);
+        const nextIndex = (currentIndex + 1) % founderTabsList.length;
+        return founderTabsList[nextIndex];
+      });
+    }, 9000);
+    return () => clearInterval(founderInterval);
+  }, []);
+
+  useEffect(() => {
+    const slideInterval = setInterval(() => {
+      setActiveStatementIndex((prevIndex) => (prevIndex + 1) % statements.length);
+    }, 9000);
+    return () => clearInterval(slideInterval);
+  }, [statements.length]);
+
+  useEffect(() => {
+    const newsInterval = setInterval(() => {
+      setActiveNewsIndex((prevIndex) => (prevIndex + 1) % socialNewsFeed.length);
+    }, 9000);
+    return () => clearInterval(newsInterval);
+  }, [socialNewsFeed.length]);
+
+  useEffect(() => {
+    if (services[editTarget]) {
+      setFormTitle(services[editTarget].title);
+      setFormSubtitle(services[editTarget].subtitle);
+      setFormDesc(services[editTarget].description);
+      setFormMetric(services[editTarget].metricCount);
+    }
+  }, [editTarget, services]);
+
+  const whatsappLink = 'https://wa.me/08037383820';
+
+  useEffect(() => {
+    let showTimer;
+    let hideTimer;
+
+    const cycleTip = () => {
+      setShowWhatsappTip(true);
+      showTimer = window.setTimeout(() => {
+        setShowWhatsappTip(false);
+        hideTimer = window.setTimeout(() => {
+          setWhatsappTipIndex((prev) => (prev + 1) % whatsappTips.length);
+          cycleTip();
+        }, 4000);
+      }, 6000);
+    };
+
+    cycleTip();
+
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop);
+      setShowScrollTop(scrollTop > 0);
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    document.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    document.body.addEventListener('scroll', handleScroll, { passive: true });
+    document.documentElement.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      document.removeEventListener('scroll', handleScroll, true);
+      document.body.removeEventListener('scroll', handleScroll);
+      document.documentElement.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  const scrollToTop = () => {
+    const scrollTarget = document.body.scrollTop > document.documentElement.scrollTop
+      ? document.body
+      : document.documentElement;
+    scrollTarget.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+  };
+
+  const handleRouteTopNavigation = () => {
+    setNavOpen(false);
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  };
+
+  const acceptCookieConsent = () => {
+    localStorage.setItem('paz-tribe-cookie-consent', 'accepted');
+    document.cookie = `paz-tribe-cookie-consent=accepted; path=/; max-age=31536000;${window.location.protocol === 'https:' ? ' Secure;' : ''} SameSite=Lax`;
+    setCookieConsentAccepted(true);
+    setShowCookieBanner(false);
+  };
+
+  const declineCookieConsent = () => {
+    localStorage.setItem('paz-tribe-cookie-consent', 'declined');
+    document.cookie = `paz-tribe-cookie-consent=declined; path=/; max-age=31536000;${window.location.protocol === 'https:' ? ' Secure;' : ''} SameSite=Lax`;
+    setCookieConsentAccepted(false);
+    setShowCookieBanner(false);
+  };
+
+  const handlePrevReview = () => {
+    setCurrentPromoSlide((prev) => (prev - 1 + promoSlides.length) % promoSlides.length);
+    setPromoSlideAutoPlay(false);
+  };
+
+  const handleNextReview = () => {
+    setCurrentPromoSlide((prev) => (prev + 1) % promoSlides.length);
+    setPromoSlideAutoPlay(false);
+  };
+
+  const tryLoadSupabaseTables = async (tableNames) => {
+    for (const tableName of tableNames) {
+      try {
+        const rows = [];
+        let offset = 0;
+        let failed = false;
+        while (true) {
+          const { data, error } = await supabase
+            .from(tableName)
+            .select('*')
+            .order('created_at', { ascending: false })
+            .range(offset, offset + 999);
+          if (error || !Array.isArray(data)) {
+            failed = true;
+            break;
+          }
+          rows.push(...data);
+          if (data.length < 1000) break;
+          offset += 1000;
+        }
+        if (!failed) return rows;
+      } catch (err) {
+        continue;
+      }
+    }
+    return null;
+  };
+
+  const normalizeStoreProduct = (product = {}) => {
+    const normalizedId = product.id || product.product_id || `store-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const parsedPrice = Number(product.price ?? product.amount ?? 0);
+    const normalizedInStock = product.in_stock ?? product.inStock ?? true;
+    const normalizedStockCount = Number(product.stock_count ?? product.stockCount ?? 0);
+
+    return {
+      id: normalizedId,
+      title: product.title || product.name || 'Untitled product',
+      description: product.description || '',
+      price: Number.isFinite(parsedPrice) ? parsedPrice : 0,
+      currency: product.currency || 'NGN',
+      isFree: Boolean(product.is_free ?? product.isFree ?? false),
+      category: product.category || 'Ebook',
+      cover: product.cover || product.cover_url || product.cover_image || product.image || product.image_url || product.imageUrl || '',
+      fileUrl: product.file_url || product.fileUrl || '',
+      inStock: normalizedInStock !== false,
+      stockCount: Number.isFinite(normalizedStockCount) ? normalizedStockCount : 0,
+      rating: Number(product.rating ?? 0),
+      reviews: Number(product.reviews ?? 0),
+      prime: Boolean(product.prime ?? false),
+      status: product.status || 'approved',
+      vendor_id: product.vendor_id || product.vendorId || null,
+      vendor_name: product.vendor_name || product.vendorName || '',
+      releaseEnabled: Boolean(product.release_enabled ?? product.releaseEnabled ?? false),
+      releaseAt: product.release_at || product.releaseAt || null,
+      closeAt: product.close_at || product.closeAt || null,
+      allowAfterClose: Boolean(product.allow_after_close ?? product.allowAfterClose ?? false),
+      createdAt: product.created_at || product.createdAt || null,
+      updatedAt: product.updated_at || product.updatedAt || null
+    };
+  };
+
+  const normalizeShopOrder = (order = {}) => {
+    const rawItems = Array.isArray(order.items)
+      ? order.items
+      : Array.isArray(order.order_items)
+        ? order.order_items
+        : [];
+
+    const normalizedItems = rawItems.map((item) => ({
+      id: item.id || item.product_id || `${order.id || 'order'}-${Math.random().toString(16).slice(2)}`,
+      title: item.title || item.product_title || item.name || 'Product',
+      quantity: Number(item.quantity ?? 1),
+      price: Number(item.price ?? item.amount ?? 0),
+      fileUrl: item.file_url || item.fileUrl || item.productFileUrl || '',
+      product_id: item.product_id || item.productId || null
+    }));
+
+    return {
+      id: order.id || order.order_id || `shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      orderNumber: order.order_number || order.orderNumber || 'N/A',
+      name: order.customer_name || order.name || 'Customer',
+      email: order.email || order.customer_email || '',
+      phone: order.phone || order.customer_phone || '',
+      total: Number(order.total ?? order.amount ?? 0),
+      subtotal: Number(order.subtotal ?? order.total ?? order.amount ?? 0),
+      notes: order.notes || '',
+      status: order.status || 'pending',
+      trackingStatus: order.tracking_status || 'order_placed',
+      trackingNumber: order.tracking_number || '',
+      estimatedDeliveryAt: order.estimated_delivery_at || '',
+      trackingUpdatedAt: order.tracking_updated_at || '',
+      paymentMode: order.payment_mode || order.paymentMode || 'live',
+      paymentProofPath: order.payment_proof_path || order.paymentProofPath || '',
+      paymentProofUrl: order.payment_proof_url || order.paymentProofUrl || '',
+      createdAt: order.created_at || order.createdAt || new Date().toISOString(),
+      items: normalizedItems,
+      productEmailSent: Boolean(order.product_email_sent ?? order.productEmailSent ?? false)
+    };
+  };
+
+  const loadCommerceData = async () => {
+    try {
+      const [productsResult, bankResult, ordersResult] = await Promise.all([
+        supabase.from('store_products').select('*').order('created_at', { ascending: false }),
+        supabase.from('store_bank_accounts').select('*').order('created_at', { ascending: false }).limit(1),
+        tryLoadSupabaseTables(['shop_orders'])
+      ]);
+
+      let loadedPublicProducts = false;
+      if (productsResult.error || !productsResult.data?.length) {
+        const publicProductsResponse = await fetch('/api/store-products-public');
+        const publicProductsPayload = await publicProductsResponse.json().catch(() => ({}));
+        if (publicProductsResponse.ok && Array.isArray(publicProductsPayload.data)) {
+          setStoreProducts(publicProductsPayload.data.map(normalizeStoreProduct));
+          loadedPublicProducts = true;
+        }
+      }
+
+      if (!loadedPublicProducts && !productsResult.error && Array.isArray(productsResult.data) && productsResult.data.length > 0) {
+        setStoreProducts(productsResult.data
+          .filter((product) => product.status === 'published' || (!product.vendor_id && product.status === 'approved'))
+          .map(normalizeStoreProduct));
+      } else if (!loadedPublicProducts && !productsResult.error && Array.isArray(productsResult.data) && productsResult.data.length === 0) {
+        setStoreProducts(defaultStoreProducts);
+      }
+
+      if (!bankResult.error && Array.isArray(bankResult.data) && bankResult.data.length > 0) {
+        const bankAccount = bankResult.data[0];
+        setStoreBankAccount({
+          id: bankAccount.id || undefined,
+          bankName: bankAccount.bank_name || bankAccount.bankName || defaultStoreBankAccount.bankName,
+          accountName: bankAccount.account_name || bankAccount.accountName || defaultStoreBankAccount.accountName,
+          accountNumber: bankAccount.account_number || bankAccount.accountNumber || defaultStoreBankAccount.accountNumber,
+          accountType: bankAccount.account_type || bankAccount.accountType || defaultStoreBankAccount.accountType,
+          swiftCode: bankAccount.swift_code || bankAccount.swiftCode || defaultStoreBankAccount.swiftCode,
+          note: bankAccount.note || defaultStoreBankAccount.note
+        });
+      }
+
+      if (Array.isArray(ordersResult)) {
+        const orderRows = ordersResult;
+        const ordersWithItems = await Promise.all(orderRows.map(async (order) => {
+          try {
+            const { data: itemRows, error: itemError } = await supabase
+              .from('shop_order_items')
+              .select('*')
+              .eq('order_id', order.id)
+              .order('created_at', { ascending: false });
+
+            if (!itemError && Array.isArray(itemRows)) {
+              return normalizeShopOrder({ ...order, items: itemRows });
+            }
+          } catch (itemLookupError) {
+            console.warn('Order item lookup failed:', itemLookupError);
+          }
+
+          return normalizeShopOrder(order);
+        }));
+
+        setShopOrders(ordersWithItems);
+      }
+    } catch (error) {
+      console.warn('Commerce data could not be loaded from Supabase:', error);
+    }
+  };
+
+  const fetchDynamicWebsiteContent = async () => {
+    try {
+      const [{ data: serviceData, error: serviceError }, { data: programData, error: programError }, applicantData] = await Promise.all([
+        supabase.from('tribe_services').select('*'),
+        supabase.from('tribe_programs').select('*'),
+        tryLoadSupabaseTables(['tribe_applicants'])
+      ]);
+
+      if (!serviceError && serviceData && serviceData.length > 0) {
+        const formattedServices = { ...services };
+        serviceData.forEach(item => {
+          if (formattedServices[item.slug]) {
+            formattedServices[item.slug] = {
+              slug: item.slug,
+              title: item.title,
+              subtitle: item.subtitle,
+              description: item.description,
+              metricCount: item.metric_count || formattedServices[item.slug].metricCount
+            };
+          }
+        });
+        setServices(formattedServices);
+      }
+
+      if (!programError && programData) {
+        setPrograms(programData.map((program) => ({
+          id: program.id?.toString() || `${program.service}-${program.title}`,
+          service: program.service,
+          name: program.title,
+          description: program.description,
+          duration: program.duration,
+          schedule: program.schedule,
+          level: program.level || 'General'
+        })));
+      }
+
+      if (Array.isArray(applicantData)) {
+        setApplicants(applicantData.map((item) => ({
+          id: item.id?.toString() || `${item.full_name}-${item.created_at}`,
+          fullName: item.full_name,
+          email: item.email,
+          phone: item.phone,
+          track: item.track,
+          message: item.message || '',
+          submittedAt: item.created_at,
+          // preserve raw admin fields for downstream processing
+          parentName: item.parent_name || item.parent_or_guardian_name || '',
+          homeAddress: item.home_address || '',
+          childrenDetails: item.children_details || item.children_details_json || null,
+          notes: item.notes || item.note || '',
+          registrationType: item.registration_type || ''
+        })));
+      }
+
+      try {
+        const contactRecords = await tryLoadSupabaseTables(['tribe_contact_messages', 'tribe_contacts', 'contact_messages', 'contacts', 'tribe_messages', 'messages']);
+        if (contactRecords) {
+          setContactMessages(contactRecords.map((item) => ({
+            id: item.id || `${item.name || item.email || 'contact'}-${item.created_at || item.createdAt || Date.now()}`,
+            name: item.name || item.full_name || item.sender || 'Unknown',
+            email: item.email || item.sender_email || item.contact_email || '',
+            subject: item.subject || item.title || 'Message',
+            message: item.message || item.body || item.content || '',
+            createdAt: item.created_at || item.createdAt || item.timestamp || ''
+          })));
+        }
+      } catch (err) {
+        console.log('No contact message table available for dynamic updates:', err);
+      }
+
+      try {
+        const bookingRecords = await tryLoadSupabaseTables(['tribe_bookings', 'bookings', 'booking_requests']);
+        if (bookingRecords) {
+          setBookings(bookingRecords.map((item) => ({
+            id: item.id || `${item.email || 'booking'}-${item.created_at || Date.now()}`,
+            contact_name: item.contact_name || item.name || 'No name',
+            email: item.email || '',
+            phone: item.phone || '',
+            program_type: item.program_type || item.program || '',
+            preferred_date: item.preferred_date || '',
+            preferred_time: item.preferred_time || '',
+            session_format: item.session_format || item.format || '',
+            notes: item.notes || item.note || '',
+            paymentReference: item.payment_reference || item.paymentReference || '',
+            paymentStatus: item.payment_status || item.paymentStatus || 'not_required',
+            created_at: item.created_at || ''
+          })));
+        }
+      } catch (err) {
+        console.log('No bookings table available for dynamic updates:', err);
+      }
+
+      try {
+        const feedbackRecords = await tryLoadSupabaseTables(['tribe_parent_feedback']);
+        if (feedbackRecords) setParentFeedback(feedbackRecords);
+      } catch (err) {
+        console.log('No parent feedback table available for dynamic updates:', err);
+      }
+
+      try {
+        const activityRecords = await tryLoadSupabaseTables(['tribe_activity', 'client_activity', 'visitor_activity', 'activity_log', 'page_views']);
+        if (activityRecords) {
+          setClientActivityLog(activityRecords.map((item) => ({
+            id: item.id || `${item.session_id || item.user_id || 'activity'}-${item.created_at || item.createdAt || Date.now()}`,
+            created_at: item.created_at || item.createdAt || item.timestamp || '',
+            path: item.path || item.page || item.url || item.pathname || '/',
+            ip_address: item.ip_address || item.ip || '',
+            device_type: item.device_type || item.device || '',
+            location: item.location || '',
+            session_id: item.session_id || item.session || item.user_id || ''
+          })));
+        }
+      } catch (err) {
+        console.log('No activity log table available for dynamic updates:', err);
+      }
+
+      try {
+        const { data: socialFeedData, error: socialFeedError } = await supabase.from('tribe_social_feed').select('*');
+        if (!socialFeedError && Array.isArray(socialFeedData) && socialFeedData.length > 0) {
+          const socialRows = socialFeedData.map((row) => ({
+            id: row.id,
+            platform: row.platform,
+            icon: row.icon || (row.platform === 'Facebook' ? 'fa-brands fa-facebook' : row.platform === 'Instagram' ? 'fa-brands fa-instagram' : 'fa-brands fa-youtube'),
+            color: row.color || '#000000',
+            badgeText: row.badge_text,
+            title: row.title,
+            summary: row.summary,
+            timestamp: row.timestamp || row.updated_at || '',
+            createdAt: row.created_at || null,
+            updatedAt: row.updated_at || null,
+            publishedAt: row.published_at || null,
+            targetUrl: row.target_url,
+            embedUrl: row.embed_url,
+            published: row.published !== false,
+          }));
+          setSocialNewsFeed(socialRows);
+          const ytRow = socialRows.find((item) => item.platform === 'YouTube');
+          if (ytRow?.embedUrl) {
+            setYoutubeEmbedUrl(ytRow.embedUrl);
+          }
+        }
+      } catch (err) {
+        console.log('No social feed table available for dynamic updates:', err);
+      }
+
+      await loadCommerceData();
+
+      // fetch testimonials after other content
+      await fetchTestimonials();
+
+      return true;
+    } catch (err) {
+      console.log("Using baseline presentation values while tables initialize.");
+      return false;
+    }
+  };
+
+  const refreshAdminData = async () => {
+    setRefreshingDashboard(true);
+    setClientActivityLoading(true);
+    try {
+      const success = await fetchDynamicWebsiteContent();
+      if (success) {
+        setToastMessage('Dashboard refreshed with the latest records successfully.');
+        setToastType('success');
+      } else {
+        setToastMessage('Refresh completed with partial results; some records may not be available.');
+        setToastType('error');
+      }
+    } catch (err) {
+      console.error('Dashboard refresh failed:', err);
+      setToastMessage('Dashboard refresh failed. Please try again or contact support if the issue persists.');
+      setToastType('error');
+    } finally {
+      setRefreshingDashboard(false);
+      setClientActivityLoading(false);
+    }
+  };
+
+  const fetchTestimonials = async () => {
+    try {
+      const [publishedResult, countResult] = await Promise.all([
+        supabase.from('tribe_testimonials').select('*').eq('status', 'published').order('created_at', { ascending: false }),
+        supabase.from('tribe_testimonials').select('id', { count: 'exact', head: true }),
+      ]);
+      if (publishedResult.error) throw publishedResult.error;
+      if (countResult.error) throw countResult.error;
+      setTestimonialCount(countResult.count ?? 0);
+      if (Array.isArray(publishedResult.data)) {
+        setPromoSlides(publishedResult.data.map((item) => ({
+          id: item.id,
+          title: item.author || item.title || 'Anonymous',
+          text: item.text || '',
+          origin: item.origin || '',
+          image: item.image || '/logo/logomain.png',
+          imageType: item.imageType || 'logo'
+        })));
+      }
+    } catch (err) {
+      console.log('Failed to fetch testimonials:', err);
+    }
+  };
+
+  const handleSignIn = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setAuthError(null);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthError(error.message);
+      setLoading(false);
+      return;
+    }
+
+    if (data?.session) {
+      const authorized = await verifyAdminAccess(data.session);
+      if (!authorized) {
+        await supabase.auth.signOut();
+        setSession(null);
+        setAuthError('This account is not authorized for the admin dashboard.');
+        setLoading(false);
+        return;
+      }
+      setSession(data.session);
+      navigate('/dashboard');
+    }
+
+    setLoading(false);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    navigate('/admin');
+  };
+
+  const parseAdminResponse = async (res) => {
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      return await res.json()
+    }
+    const text = await res.text()
+    throw new Error(text || `Unexpected non-JSON response from admin endpoint (${res.status})`)
+  }
+
+  const setCmsStatus = (message, isError = false) => {
+    setToastMessage(message)
+    setToastType(isError ? 'error' : 'success')
+
+    if (isError) {
+      setCmsSuccessMessage(null)
+      setCmsErrorMessage(message)
+      return
+    }
+    setCmsSuccessMessage(message)
+    setCmsErrorMessage(null)
+  }
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      setToastMessage('You are offline. Some features may be unavailable until your connection returns.');
+      setToastType('error');
+    };
+    const handleOnline = () => {
+      setToastMessage('Your internet connection has been restored.');
+      setToastType('success');
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    if (!navigator.onLine) handleOffline();
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  const normalizeYoutubeEmbed = (url) => {
+    if (!url) return '';
+    const value = url.trim();
+    try {
+      const parsed = new URL(value);
+      const hostname = parsed.hostname.replace(/^www\./, '');
+      let videoId = '';
+      if (hostname === 'youtu.be') videoId = parsed.pathname.slice(1);
+      if (hostname === 'youtube.com' || hostname === 'm.youtube.com') {
+        videoId = parsed.searchParams.get('v') || parsed.pathname.match(/\/shorts\/([^/]+)/)?.[1] || parsed.pathname.match(/\/embed\/([^/]+)/)?.[1] || '';
+      }
+      if (videoId) return `https://www.youtube.com/embed/${videoId}`;
+    } catch (error) {
+      return value;
+    }
+    return value;
+  };
+
+  const handleUpdateContentCMS = async (e) => {
+    e.preventDefault();
+    setCmsStatus(null);
+
+    setServices(prev => ({
+      ...prev,
+      [editTarget]: {
+        ...prev[editTarget],
+        title: formTitle,
+        subtitle: formSubtitle,
+        description: formDesc,
+        metricCount: formMetric
+      }
+    }));
+
+    try {
+      // call secure serverless admin endpoint
+      const res = await fetch('/api/admin-update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`
+        },
+        body: JSON.stringify({
+          action: 'update',
+          table: 'tribe_services',
+          payload: { title: formTitle, subtitle: formSubtitle, description: formDesc, metric_count: formMetric },
+          match: { slug: editTarget }
+        })
+      });
+
+      const payloadRes = await parseAdminResponse(res);
+      if (!res.ok) throw new Error(payloadRes?.error || 'Admin endpoint failed');
+      setCmsStatus('Ecosystem service menu content synchronized successfully live!');
+    } catch (err) {
+      console.error('Admin endpoint failed updating tribe_services:', err);
+      setCmsStatus(`Preview saved locally. Admin update failed: ${err?.message || err}`, true);
+    }
+  };
+
+  const handleAddTestimonial = async (e) => {
+    e.preventDefault();
+    setCmsSuccessMessage(null);
+
+    const payload = {
+      title: testimonialAuthor || 'Anonymous',
+      text: testimonialText,
+      origin: testimonialOrigin || '',
+      image: '/logo/logomain.png',
+      imageType: 'logo'
+    };
+
+    // If editing an existing testimonial, update it in local state (and attempt DB update)
+    if (testimonialEditIndex !== null && promoSlides[testimonialEditIndex]) {
+      const target = promoSlides[testimonialEditIndex];
+      setPromoSlides((prev) => prev.map((t, i) => (i === testimonialEditIndex ? { ...t, ...payload } : t)));
+
+      // Attempt DB update if record has id
+      try {
+        if (target.id) {
+          const res = await fetch('/api/admin-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+            body: JSON.stringify({ action: 'update', table: 'tribe_testimonials', payload: { author: payload.title, origin: payload.origin, text: payload.text, status: 'published' }, match: { id: target.id } })
+          });
+          const jr = await parseAdminResponse(res);
+          if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+          const data = jr.data?.[0] || jr.data;
+          setPromoSlides((prev) => prev.map((t, i) => (i === testimonialEditIndex ? {
+            id: data.id || target.id,
+            title: data.author || payload.title,
+            text: data.text || payload.text,
+            origin: data.origin || payload.origin,
+            image: data.image || payload.image,
+            imageType: data.imageType || payload.imageType
+          } : t)));
+          setCmsStatus('Testimonial updated in database.');
+        } else {
+          // insert
+          const res = await fetch('/api/admin-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+            body: JSON.stringify({ action: 'insert', table: 'tribe_testimonials', payload: [{ author: payload.title, origin: payload.origin, text: payload.text, status: 'published' }] })
+          });
+          const jr = await parseAdminResponse(res);
+          if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+          const created = Array.isArray(jr.data) ? jr.data[0] : jr.data
+          setPromoSlides((prev) => [created, ...prev]);
+          setCmsStatus('Testimonial saved to database.');
+        }
+      } catch (err) {
+        console.error('Failed updating/inserting testimonial via admin endpoint:', err);
+        setCmsStatus(`Update applied locally; admin update failed: ${err?.message || err}`, true);
+      }
+
+      setTestimonialEditIndex(null);
+    } else {
+      // Add new testimonial and persist to DB
+      try {
+        const res = await fetch('/api/admin-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+          body: JSON.stringify({ action: 'insert', table: 'tribe_testimonials', payload: [{ author: payload.title, origin: payload.origin, text: payload.text, status: 'published' }] })
+        });
+        const jr = await parseAdminResponse(res);
+        if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+        const created = Array.isArray(jr.data) ? jr.data[0] : jr.data
+        setPromoSlides((prev) => [created, ...prev]);
+        setCmsStatus('Testimonial saved to database.');
+      } catch (err) {
+        console.error('Failed inserting testimonial via admin endpoint:', err);
+        setPromoSlides((prev) => [payload, ...prev]);
+        setCmsStatus(`Testimonial added locally; admin insert failed: ${err?.message || err}`, true);
+      }
+    }
+
+    setTestimonialAuthor(''); setTestimonialText(''); setTestimonialOrigin('');
+  };
+
+  const handleTestimonialSubmission = async (e) => {
+    e.preventDefault();
+    if (testimonialSubmitting) return;
+    const name = testimonialSubmission.name.trim();
+    const message = testimonialSubmission.message.trim();
+
+    if (!name || !message) {
+      setTestimonialSubmitStatus('');
+      setToastMessage('Please add your name and a short testimonial before submitting.');
+      setToastType('error');
+      return;
+    }
+
+    setTestimonialSubmitting(true);
+    try {
+      const res = await fetch('/api/testimonial-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, message, origin: testimonialSubmission.origin.trim() || 'Parent' })
+      });
+      const jr = await parseAdminResponse(res);
+      if (!res.ok) throw new Error(jr?.error || 'Failed to submit testimonial');
+      setTestimonialSubmission({ name: '', origin: '', message: '' });
+      setTestimonialSubmitStatus('Thank you. Your testimonial was sent for admin review and is not public yet.');
+      void notifyAdminActivity('Testimonial submission', 'New testimonial submitted for review', { name, origin: testimonialSubmission.origin.trim() || 'Parent', message });
+      setToastMessage('Thank you. Your testimonial has been sent for admin review.');
+      setToastType('success');
+    } catch (err) {
+      console.error('Failed saving testimonial to database:', err);
+      setToastMessage(err.message || 'Your testimonial could not be submitted.');
+      setToastType('error');
+    } finally {
+      setTestimonialSubmitting(false);
+    }
+  };
+
+  const handleStartEditTestimonial = (index) => {
+    const t = promoSlides[index];
+    if (!t) return;
+    setTestimonialAuthor(t.title || '');
+    setTestimonialText(t.text || '');
+    setTestimonialOrigin(t.origin || '');
+    setTestimonialEditIndex(index);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEditTestimonial = () => {
+    setTestimonialAuthor(''); setTestimonialText(''); setTestimonialOrigin(''); setTestimonialEditIndex(null);
+  };
+
+  const handleDeleteTestimonial = async (index) => {
+    const t = promoSlides[index];
+    if (!t) return;
+    // remove locally
+    setPromoSlides((prev) => prev.filter((_, i) => i !== index));
+    // attempt DB delete if id present
+    if (t.id) {
+      try {
+        const res = await fetch('/api/admin-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+          body: JSON.stringify({ action: 'delete', table: 'tribe_testimonials', match: { id: t.id } })
+        });
+        const jr = await parseAdminResponse(res);
+        if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+        setCmsStatus('Testimonial deleted from database.');
+        await fetchTestimonials();
+      } catch (err) {
+        console.error('Failed deleting testimonial via admin endpoint:', err);
+        setCmsStatus(`Testimonial removed locally; admin delete failed: ${err?.message || err}`, true);
+      }
+    }
+  };
+
+  const handleUpdateSocialPreview = async (e) => {
+    e.preventDefault();
+    setCmsSuccessMessage(null);
+
+    const existingItem = socialNewsFeed.find((item) => item.platform === socialEditTarget);
+    const updatedItem = {
+      platform: socialEditTarget,
+      icon: existingItem?.icon || (socialEditTarget === 'Facebook' ? 'fa-brands fa-facebook' : socialEditTarget === 'Instagram' ? 'fa-brands fa-instagram' : 'fa-brands fa-youtube'),
+      color: existingItem?.color || (socialEditTarget === 'Facebook' ? '#1877F2' : socialEditTarget === 'Instagram' ? '#E1306C' : '#FF0000'),
+      badgeText: socialPreviewBadgeText,
+      title: socialPreviewTitle,
+      summary: socialPreviewSummary,
+      timestamp: socialPreviewTimestamp || existingItem?.timestamp || '',
+      targetUrl: socialPreviewUrl,
+      embedUrl: socialEditTarget === 'YouTube' ? normalizeYoutubeEmbed(socialPreviewEmbedUrl || socialPreviewUrl) : existingItem?.embedUrl
+    }
+
+    if (socialEditTarget === 'YouTube') {
+      setYoutubeEmbedUrl(updatedItem.embedUrl);
+    }
+
+    try {
+      const action = existingItem ? 'update' : 'insert';
+      const bodyPayload = {
+        action,
+        table: 'tribe_social_feed',
+        payload: [{
+          platform: updatedItem.platform,
+          icon: updatedItem.icon,
+          color: updatedItem.color,
+          badge_text: updatedItem.badgeText,
+          title: updatedItem.title,
+          summary: updatedItem.summary,
+          timestamp: updatedItem.timestamp,
+          target_url: updatedItem.targetUrl,
+          embed_url: updatedItem.embedUrl
+        }],
+        match: existingItem ? { platform: updatedItem.platform } : undefined
+      };
+
+      setSocialNewsFeed((currentFeed) => {
+        const nextFeed = currentFeed.some((item) => item.platform === updatedItem.platform)
+          ? currentFeed.map((item) => item.platform === updatedItem.platform ? updatedItem : item)
+          : [...currentFeed, updatedItem];
+        return nextFeed;
+      });
+
+      const res = await fetch('/api/admin-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify(bodyPayload)
+      });
+      const jr = await parseAdminResponse(res);
+      if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+      setCmsStatus(`Social preview for ${socialEditTarget} has been updated successfully.`);
+    } catch (err) {
+      console.error('Failed saving social preview via admin endpoint:', err);
+      setCmsStatus(`Social preview updated locally; admin save failed: ${err?.message || err}`, true);
+    }
+  };
+
+  const saveYoutubeVideo = async ({ id, title, description, targetUrl }) => {
+    const embedUrl = normalizeYoutubeEmbed(targetUrl);
+    const videoPayload = {
+      platform: 'YouTube',
+      icon: 'fa-brands fa-youtube',
+      color: '#FF0000',
+      badge_text: 'Teachable Moments',
+      title: title.trim(),
+      summary: description.trim(),
+      timestamp: new Date().toLocaleDateString(),
+      target_url: targetUrl.trim(),
+      embed_url: embedUrl,
+      ...(id ? {} : { published: false }),
+    };
+    const res = await fetch('/api/admin-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+      body: JSON.stringify({
+        action: id ? 'update' : 'insert',
+        table: 'tribe_social_feed',
+        payload: id ? videoPayload : [videoPayload],
+        match: id ? { id } : undefined,
+      }),
+    });
+    const result = await parseAdminResponse(res);
+    if (!res.ok) throw new Error(result?.error || 'YouTube video could not be saved');
+    const saved = Array.isArray(result.data) ? result.data[0] : result.data;
+    const nextVideo = {
+      id: saved?.id || id,
+      platform: 'YouTube',
+      icon: 'fa-brands fa-youtube',
+      color: '#FF0000',
+      badgeText: 'Teachable Moments',
+      title: saved?.title || title.trim(),
+      summary: saved?.summary || description.trim(),
+      timestamp: saved?.timestamp || videoPayload.timestamp,
+      createdAt: saved?.created_at || new Date().toISOString(),
+      updatedAt: saved?.updated_at || new Date().toISOString(),
+      publishedAt: saved?.published_at || null,
+      targetUrl: saved?.target_url || targetUrl.trim(),
+      embedUrl: saved?.embed_url || embedUrl,
+      published: saved?.published === true,
+    };
+    setSocialNewsFeed((current) => id
+      ? current.map((item) => item.id === id ? nextVideo : item)
+      : [nextVideo, ...current]);
+    setYoutubeEmbedUrl(nextVideo.embedUrl);
+    return nextVideo;
+  };
+
+  const setYoutubeVideoPublished = async (video, published) => {
+    if (!video?.id) {
+      throw new Error('This saved video has no database ID. Refresh the dashboard and try again.');
+    }
+    const res = await fetch('/api/admin-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+      body: JSON.stringify({ action: 'update', table: 'tribe_social_feed', payload: { published }, match: { id: video.id } }),
+    });
+    const result = await parseAdminResponse(res);
+    if (!res.ok) throw new Error(result?.error || 'Video status could not be updated');
+    setSocialNewsFeed((current) => current.map((item) => item.id === video.id ? { ...item, published } : item));
+  };
+
+  const deleteYoutubeVideo = async (video) => {
+    if (!video?.id) {
+      throw new Error('This saved video has no database ID. Refresh the dashboard and try again.');
+    }
+    const res = await fetch('/api/admin-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+      body: JSON.stringify({ action: 'delete', table: 'tribe_social_feed', match: { id: video.id } }),
+    });
+    const result = await parseAdminResponse(res);
+    if (!res.ok) throw new Error(result?.error || 'Video could not be deleted');
+    setSocialNewsFeed((current) => current.filter((item) => item.id !== video.id));
+  };
+
+  const handleCreateProgram = async (e) => {
+    e.preventDefault();
+    setDashboardMessage(null);
+
+    const newProgram = {
+      id: `${programForm.service}-${programForm.title}-${Date.now()}`,
+      service: programForm.service,
+      name: programForm.title,
+      description: programForm.description,
+      duration: programForm.duration,
+      schedule: programForm.schedule,
+      level: programForm.level
+    };
+
+    setPrograms((prev) => [newProgram, ...prev]);
+
+    try {
+      const res = await fetch('/api/admin-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ action: 'insert', table: 'tribe_programs', payload: [{ service: programForm.service, title: programForm.title, description: programForm.description, duration: programForm.duration, schedule: programForm.schedule, level: programForm.level }] })
+      });
+      const jr = await parseAdminResponse(res);
+      if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+      setDashboardMessage('Program created successfully and available in menu pages.');
+    } catch (err) {
+      console.error('Admin endpoint failed creating while program:', err);
+      setDashboardMessage(`Program saved locally; admin insert failed: ${err?.message || err}`);
+    }
+
+    setProgramForm({ service: 'family', title: '', description: '', duration: '', schedule: '', level: '' });
+  };
+
+  const handleRemoveProgram = async (programId) => {
+    setPrograms((prev) => prev.filter((p) => p.id !== programId));
+    try {
+      const programToRemove = programs.find((p) => p.id === programId);
+      if (programToRemove && programToRemove.id) {
+        const res = await fetch('/api/admin-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+          body: JSON.stringify({ action: 'delete', table: 'tribe_programs', match: { id: programToRemove.id } })
+        });
+        const jr = await parseAdminResponse(res);
+        if (!res.ok) throw new Error(jr?.error || 'Admin endpoint failed');
+      }
+    } catch (err) {
+      console.error('Failed removing program via admin endpoint:', err);
+      setDashboardMessage(`Program removed locally; admin delete failed: ${err?.message || err}`);
+    }
+  };
+
+  const handleHeroBookingSubmit = async (event) => {
+    event.preventDefault();
+    if (bookingSubmitting) return;
+    setBookingSubmitting(true);
+
+    try {
+      const bookingPayload = {
+        registration_type: bookingForm.clientType,
+        contact_name: bookingForm.name.trim(),
+        email: bookingForm.email.trim(),
+        phone: bookingForm.phone.trim(),
+        program_type: 'Talk & Thrive Counseling',
+        preferred_time: bookingForm.preferredTime,
+        session_format: bookingForm.sessionType,
+        notes: bookingForm.concern,
+        payment_status: 'not_required'
+      };
+      const { error } = await supabase.from('tribe_bookings').insert([bookingPayload]);
+      if (error) throw error;
+
+      const savedBooking = { ...bookingPayload, id: `booking-${Date.now()}`, created_at: new Date().toISOString() };
+      setBookings((current) => [savedBooking, ...current]);
+      void notifyAdminActivity('Booking request', 'New free session booking', savedBooking);
+      setBookingSubmitted(true);
+      setToastMessage('Your free booking request has been submitted.');
+      setToastType('success');
+      setBookingForm({ name: '', email: '', phone: '', clientType: 'Individual', sessionType: 'Virtual', preferredTime: 'Any time', concern: '' });
+    } catch (error) {
+      console.error('Unable to save booking request:', error);
+      setToastMessage('We could not submit your booking. Please try again.');
+      setToastType('error');
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const addApplicant = async (applicant) => {
+    const newApplicant = {
+      id: `app-${Date.now()}`,
+      fullName: applicant.fullName || applicant.parentName || applicant.full_name || '',
+      email: applicant.email || applicant.parentEmail || '',
+      phone: applicant.phone || applicant.phoneNumber1 || applicant.phone1 || '',
+      track: applicant.track || applicant.targetTrack || applicant.selectedTrack || '',
+      message: applicant.message || applicant.developmentGoals || '',
+      paymentReference: applicant.paymentReference || '',
+      paymentStatus: applicant.paymentStatus || 'pending',
+      submittedAt: new Date().toISOString()
+    };
+    setApplicants((prev) => [newApplicant, ...prev]);
+
+    try {
+      const { error } = await supabase.from('tribe_applicants').insert([{
+        full_name: newApplicant.fullName,
+        email: newApplicant.email,
+        phone: newApplicant.phone,
+        track: newApplicant.track,
+        message: newApplicant.message,
+        payment_reference: newApplicant.paymentReference || null,
+        payment_status: newApplicant.paymentStatus || 'pending'
+      }]);//.select();
+      if (error) throw error; 
+      void notifyAdminActivity('Applicant intake', 'New service applicant', newApplicant);
+    } catch (err) { 
+      console.error('Server down at the moment try again later:', err);
+      console.log('Applicant captured locally; Supabase insert unavailable.');
+    }
+  };
+
+  const handleServiceIntakeSubmit = async (serviceApplicant) => {
+    setCmsSuccessMessage(null);
+    await addApplicant(serviceApplicant);
+  };
+
+  const homeHelpServices = [
+    { title: 'Register for PTTA Academy', description: 'Start the teens academy onboarding form.', path: '/teens_reg', icon: 'fa-solid fa-user-graduate', action: 'Register now' },
+    { title: 'Talk & Thrive', description: 'Get caring coaching and counselling support.', path: '/care-counseling', icon: 'fa-solid fa-hand-holding-heart', action: 'Get support' },
+    { title: 'Book a session', description: 'Tell us what support you are looking for.', path: '/book-session', icon: 'fa-solid fa-calendar-check', action: 'Book a session' },
+    { title: 'Shop', description: 'Browse books and resources from our store.', path: '/shop', icon: 'fa-solid fa-bag-shopping', action: 'Visit the shop' }
+  ];
+  const shopHelpServices = [
+    { title: 'Browse books & resources', description: 'Explore books, ebooks, and practical workbooks.', path: '/shop', icon: 'fa-solid fa-book-open', action: 'Browse shop' },
+    { title: 'Become a vendor', description: 'Share your books and products with our community.', path: '/vendor', icon: 'fa-solid fa-store', action: 'Sell with PAZ' },
+    { title: 'Talk & Thrive', description: 'Looking for coaching or counselling instead?', path: '/care-counseling', icon: 'fa-solid fa-hand-holding-heart', action: 'Explore support' }
+  ];
+  const bookingHelpServices = [
+    { title: 'Continue your booking', description: 'The booking form is right here on this page.', path: '/book-session', icon: 'fa-solid fa-calendar-check', action: 'Continue booking' },
+    { title: 'Talk & Thrive', description: 'Explore coaching and counselling support.', path: '/care-counseling', icon: 'fa-solid fa-hand-holding-heart', action: 'Explore support' },
+    { title: 'Explore the Teens Academy', description: 'Learn about programs for pre-teens and teenagers.', path: '/teens-kids-academy', icon: 'fa-solid fa-people-group', action: 'Explore academy' }
+  ];
+
+  return (
+    <>
+      <style>{`
+        :root {
+          --bg-main: #f9fdfb;
+          --bg-card: #ffffff;
+          --bg-nav: rgba(255, 255, 255, 0.92);
+          --bg-input: #f4fbf9;
+          --border-color: #dfeee7;
+          --text-primary: #1b2a27;
+          --text-muted: #536c66;
+          --brand-green: #1fcf78;
+          --brand-green-hover: #17b864;
+          --brand-blue: #2f86ff;
+          --accent-green: #ffb45d;
+          --brand-peach: #ff8f70;
+          --brand-gold: #f4c768;
+          --brand-teal: #4ad7c3;
+          --shadow-sm: 0 2px 8px rgba(17, 98, 70, 0.08);
+          --shadow-lg: 0 12px 34px rgba(17, 98, 70, 0.12);
+        }
+
+        html:has(.independence-day-theme),
+        body:has(.independence-day-theme) {
+          background: #ffffff !important;
+          color: #075b35 !important;
+        }
+
+        .independence-day-theme {
+          --logo-bg: #ffffff;
+          --logo-surface: #ffffff;
+          --logo-surface-soft: #f1faf5;
+          --logo-border: #b9dfc9;
+          --logo-text: #075b35;
+          --logo-text-soft: #3c7757;
+          --logo-green: #008751;
+          --logo-green-deep: #006b40;
+          --bg-main: #ffffff;
+          --bg-card: #ffffff;
+          --bg-nav: rgba(255, 255, 255, 0.97);
+          --bg-input: #f5fbf7;
+          --border-color: #b9dfc9;
+          --text-primary: #075b35;
+          --text-muted: #3c7757;
+          --brand-green: #008751;
+          --brand-green-hover: #006b40;
+          --brand-blue: #008751;
+          --accent-green: #008751;
+          --brand-peach: #008751;
+          --brand-gold: #d9f0e2;
+          --brand-teal: #008751;
+          color: #075b35;
+          background: #ffffff;
+        }
+
+        .independence-day-theme :is(h1, h2, h3, h4, h5, h6, p, li, label, a, small, strong) {
+          color: #075b35;
+        }
+
+        .independence-day-theme button,
+        .independence-day-theme [role="button"] {
+          background: #008751 !important;
+          border-color: #008751 !important;
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme :is(button, [role="button"]) *,
+        .independence-day-theme :is(.nav-shop-link, .nav-cta-link, .nav-navigation-links .nav-link-item, .floating-action-trigger) * {
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .workspace-fluid-footer {
+          background: #008751 !important;
+          border-color: rgba(255, 255, 255, 0.55) !important;
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .workspace-fluid-footer :is(h1, h2, h3, h4, h5, h6, p, a, span, strong, small, i) {
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .workspace-fluid-footer .footer-columns-container {
+          border-bottom-color: rgba(255, 255, 255, 0.5) !important;
+        }
+
+        .independence-day-theme .workspace-fluid-footer .footer-vector-badge,
+        .independence-day-theme .workspace-fluid-footer .footer-social-icon {
+          background: #ffffff !important;
+          border-color: #ffffff !important;
+          color: #008751 !important;
+        }
+
+        .independence-day-theme .workspace-fluid-footer .footer-social-icon :is(i, span) {
+          color: #008751 !important;
+        }
+
+        .independence-day-theme :is(input, textarea, select) {
+          background-color: #f5fbf7 !important;
+          border-color: #b9dfc9 !important;
+          color: #075b35 !important;
+        }
+
+        .independence-day-theme :is(input, textarea, select)::placeholder {
+          color: #3c7757 !important;
+        }
+
+        .independence-day-theme .shop-product-search-input {
+          border: 3px solid #008751 !important;
+        }
+
+        .independence-day-theme :is([class*="card"], [class*="panel"], [class*="tile"], [class*="surface"]):not(.hero-copy-card) {
+          background-color: #ffffff !important;
+          border-color: #b9dfc9 !important;
+        }
+
+        .independence-day-theme .public-navbar {
+          background: rgba(255, 255, 255, 0.97) !important;
+          border-bottom-color: #b9dfc9 !important;
+        }
+
+        .independence-day-theme .public-navbar :is(.nav-shop-link, .nav-cta-link, .nav-menu-toggle, .nav-navigation-links .nav-link-item) {
+          background: #008751 !important;
+          border: 1px solid #006b40 !important;
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .public-navbar .nav-shop-link.active {
+          background: #008751 !important;
+          border-color: #006b40 !important;
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .public-navbar .nav-logo-brand-zone {
+          background: transparent !important;
+          color: #075b35 !important;
+        }
+
+        .independence-day-theme .floating-action-trigger,
+        .independence-day-theme .scroll-to-top-btn {
+          background-color: #008751 !important;
+          border: 2px solid #ffffff !important;
+          color: #ffffff !important;
+          outline: 1px solid #ffffff;
+          outline-offset: 2px;
+        }
+
+        .independence-day-theme .public-website-container > div,
+        .independence-day-theme .shop-page-shell > div {
+          background: #ffffff !important;
+          color: #075b35 !important;
+        }
+
+        .independence-day-theme .shop-page-shell > div > header {
+          background: #f1faf5 !important;
+          border-bottom: 1px solid #b9dfc9 !important;
+          color: #075b35 !important;
+        }
+
+        .independence-day-theme .store-page-canvas {
+          background: #ffffff !important;
+        }
+
+        .independence-day-theme .shop-promotional-board :is(span, strong) {
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme :is(.store-hero-title, .store-hero-text, .store-hero-kicker, .store-hero-subline) {
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .independence-story-carousel .independence-story-copy :is(h1, h2, h3, h4, h5, h6, p, span, strong, a) {
+          color: #ffffff !important;
+        }
+
+        .independence-day-theme .hero-independence-day-bg::before {
+          background: linear-gradient(90deg, rgba(0, 70, 40, 0.72), rgba(0, 135, 81, 0.38), rgba(0, 70, 40, 0.72));
+        }
+
+        .independence-day-theme .hero-independence-day-bg + .hero-overlay .hero-copy-card h1,
+        .independence-day-theme .hero-independence-day-bg + .hero-overlay .hero-copy-card p {
+          color: #ffffff !important;
+        }
+
+        .hero-independence-day-kicker {
+          display: block;
+          margin-bottom: 0.9rem;
+          color: #d8f3e2;
+          font-size: 0.8rem;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .independence-day-ribbon {
+          position: fixed;
+          z-index: 1100;
+          top: 78px;
+          left: 50%;
+          transform: translateX(-50%);
+          max-width: calc(100vw - 24px);
+          padding: 0.55rem 0.9rem;
+          border: 1px solid #b9dfc9;
+          border-radius: 999px;
+          background: #ffffff;
+          color: #075b35;
+          box-shadow: 0 5px 18px rgba(0, 80, 45, 0.16);
+          font-size: 0.9rem;
+          font-weight: 800;
+          text-align: center;
+          white-space: nowrap;
+          pointer-events: none;
+        }
+
+        @media (max-width: 520px) {
+          .independence-day-ribbon { top: 70px; font-size: 0.75rem; }
+        }
+
+        .independence-day-flag-flight-layer {
+          position: fixed;
+          z-index: 1005;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .independence-day-flag-flight {
+          position: absolute;
+          left: -90px;
+          width: clamp(40px, 5vw, 66px);
+          height: auto;
+          filter: drop-shadow(0 4px 6px rgba(0, 45, 25, 0.24));
+          animation: independenceFlagFly 21s linear infinite;
+          animation-delay: var(--flag-delay);
+        }
+
+        .independence-day-flag-flight:nth-child(1) { top: 19%; --flag-delay: -2s; }
+        .independence-day-flag-flight:nth-child(2) { top: 43%; --flag-delay: -9s; width: clamp(34px, 4vw, 54px); }
+        .independence-day-flag-flight:nth-child(3) { top: 70%; --flag-delay: -15s; width: clamp(38px, 4.5vw, 60px); }
+
+        @keyframes independenceFlagFly {
+          from { transform: translateX(0) rotate(-8deg); }
+          to { transform: translateX(calc(100vw + 180px)) rotate(8deg); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .independence-day-flag-flight-layer { display: none; }
+        }
+
+        html, body, #root, .full-view-app-root-override {
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 100% !important;
+        }
+
+        .app-preloader-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 99999;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: var(--bg-main);
+          color: var(--text-primary);
+          padding: 1rem;
+        }
+
+        .app-preloader-box {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1rem;
+          padding: 2rem 2.5rem;
+          border-radius: 24px;
+          background: var(--bg-card);
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.06);
+          min-width: 320px;
+          max-width: 92vw;
+          text-align: center;
+          border: 1px solid var(--border-color);
+        }
+
+        .app-preloader-logo {
+          width: 120px;
+          height: 120px;
+          object-fit: cover;
+          border-radius: 50%;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+          animation: app-logo-spin 0.95s linear infinite;
+          background: transparent;
+        }
+
+        .independence-day-preloader {
+          background: #ffffff;
+          color: #075b35;
+        }
+
+        .independence-day-preloader .app-preloader-box {
+          background: #ffffff;
+          border-color: #b9dfc9;
+          box-shadow: 0 18px 48px rgba(0, 80, 45, 0.12);
+        }
+
+        .independence-day-preloader-flag {
+          width: min(190px, 52vw);
+          height: 132px;
+          position: relative;
+          display: flex;
+          align-items: stretch;
+          perspective: 520px;
+          filter: drop-shadow(0 12px 18px rgba(0, 65, 35, 0.18));
+        }
+
+        .independence-day-preloader-flag::before {
+          content: '';
+          position: absolute;
+          z-index: 2;
+          top: -4px;
+          bottom: -4px;
+          left: 0;
+          width: 5px;
+          border-radius: 4px;
+          background: linear-gradient(90deg, #a7b5ae, #f7faf8 55%, #7f8c85);
+        }
+
+        .independence-day-preloader-cloth {
+          position: absolute;
+          inset: 8px 0 8px 5px;
+          display: flex;
+          overflow: hidden;
+          transform-style: preserve-3d;
+          clip-path: polygon(0 0, 100% 4%, 100% 96%, 0 100%);
+        }
+
+        .independence-day-preloader-cloth-segment {
+          position: relative;
+          flex: 1 1 0;
+          min-width: 0;
+          background-image: linear-gradient(90deg, #008751 0 33.333%, #ffffff 33.333% 66.666%, #008751 66.666% 100%);
+          background-size: 1200% 100%;
+          background-position-x: var(--segment-position);
+          transform-origin: left center;
+          animation: independenceFlagClothWave 1.55s ease-in-out infinite;
+          animation-delay: var(--wave-delay);
+        }
+
+        .independence-day-preloader-cloth-segment::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(90deg, rgba(255,255,255,0.18), transparent 45%, rgba(0,33,18,0.25));
+          pointer-events: none;
+        }
+
+        @keyframes independenceFlagClothWave {
+          0%, 100% { transform: rotateY(0deg) skewY(0deg) translateY(0); filter: brightness(1); }
+          50% { transform: rotateY(-12deg) skewY(-3deg) translateY(2px); filter: brightness(0.78); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .independence-day-preloader-flag { animation: none; }
+          .independence-day-preloader-cloth-segment { animation: none; }
+        }
+
+        /* keep spinner CSS in case we want it later */
+        .app-preloader-spinner {
+          width: 78px;
+          height: 78px;
+          border: 8px solid rgba(255, 255, 255, 0.06);
+          border-top-color: rgba(255,255,255,0.04);
+          border-radius: 50%;
+          display: none;
+        }
+
+        @keyframes app-preloader-spin {
+          to { transform: rotate(1turn); }
+        }
+
+        @keyframes app-logo-spin {
+          to { transform: rotate(1turn); }
+        }
+
+        @media (max-width: 640px) {
+          .app-preloader-box {
+            padding: 1.25rem 1rem;
+            min-width: 240px;
+          }
+
+          .app-preloader-logo {
+            width: 88px;
+            height: 88px;
+          }
+
+          .app-preloader-overlay { padding: 0.5rem; }
+        }
+
+        html, body, #root, .full-view-app-root-override {
+          box-sizing: border-box !important;
+          background-color: var(--bg-main);
+          color: var(--text-primary);
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+          transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .full-view-app-root-override { padding-top: 72px; }
+        .full-view-app-root-override.vendor-route-root { padding-top: 0; }
+
+        body { overflow-x: hidden; }
+
+        .cookie-consent-toast-container {
+          top: auto !important;
+          left: 1rem;
+          right: 1rem;
+          bottom: 1rem;
+          width: auto;
+          transform: none;
+          max-width: none;
+          height: auto !important;
+          min-height: 0 !important;
+          align-items: center;
+          z-index: 100000;
+          pointer-events: auto;
+        }
+
+        .cookie-consent-toast {
+          position: relative;
+          width: min(100%, 620px);
+          height: auto !important;
+          min-height: 0 !important;
+          background: rgba(18, 23, 30, 0.96);
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 18px;
+          padding: 0.8rem 1rem;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 1rem;
+          align-items: center;
+          justify-content: space-between;
+          z-index: 12000;
+          box-shadow: 0 28px 70px rgba(0, 0, 0, 0.25);
+        }
+
+        .cookie-consent-copy {
+          flex: 0 1 360px;
+          color: #f4f4f4;
+          font-size: 0.86rem;
+          line-height: 1.4;
+        }
+
+        .cookie-consent-actions {
+          display: flex;
+          gap: 0.75rem;
+          flex: 0 0 auto;
+          align-items: center;
+        }
+
+        .cookie-accept-btn,
+        .cookie-decline-btn {
+          border: none;
+          cursor: pointer;
+          border-radius: 999px;
+          padding: 0.6rem 0.9rem;
+          min-height: 38px;
+          font-size: 0.86rem;
+          font-weight: 700;
+          transition: transform 0.15s ease, background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .cookie-accept-btn {
+          background: #238636;
+          color: white;
+        }
+
+        .cookie-decline-btn {
+          background: rgba(255,255,255,0.08);
+          color: #d0d7de;
+        }
+
+        .cookie-accept-btn:hover,
+        .cookie-decline-btn:hover {
+          transform: translateY(-1px);
+        }
+
+        @media (max-width: 720px) {
+          .cookie-consent-toast-container {
+            top: auto !important;
+            left: 0.75rem;
+            right: 0.75rem;
+            bottom: 0.75rem;
+            width: auto;
+            transform: none;
+          }
+
+          .cookie-consent-toast {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.65rem;
+            padding: 0.85rem 0.85rem 0.8rem;
+            background: #fff;
+            color: #334155;
+            border: 1px solid #dbe4ee;
+            border-top: 4px solid var(--brand-green);
+            border-radius: 14px;
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.2);
+            max-height: calc(100vh - 1.5rem);
+            box-sizing: border-box;
+            overflow: auto;
+          }
+
+          .cookie-consent-copy {
+            flex: 0 0 auto;
+            color: #334155;
+            font-size: 0.82rem;
+            line-height: 1.4;
+          }
+
+          .cookie-consent-actions {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem;
+          }
+
+          .cookie-accept-btn,
+          .cookie-decline-btn {
+            min-height: 42px;
+            padding: 0.55rem 0.65rem;
+            border-radius: 9px;
+            font-size: 0.84rem;
+          }
+
+          .cookie-accept-btn {
+            background: var(--brand-green);
+            color: #fff;
+          }
+
+          .cookie-decline-btn {
+            background: #eefaf6;
+            color: #17634f;
+            border: 1px solid #bfe9d5;
+          }
+        }
+
+        /* STICKY HEADER NAVIGATION BAR CONTROLS */
+        .public-navbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100% !important;
+          min-height: 82px;
+          padding: 1.2rem 4rem;
+          background-color: var(--bg-nav);
+          border-bottom: 1px solid var(--border-color);
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 10000;
+          box-sizing: border-box;
+          box-shadow: var(--shadow-sm);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          gap: 1.25rem;
+        }
+        .nav-logo-brand-zone {
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 0.65rem;
+          text-decoration: none;
+          min-width: 0;
+          margin-right: auto;
+          flex-shrink: 0;
+        }
+        .nav-logo-img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background-color: transparent; border: none; }
+        /* Make any image path that includes 'logo/' display as a circular logo */
+        img[src*="logo/"] {
+          border-radius: 50%;
+          object-fit: cover;
+          display: inline-block;
+        }
+        .platform-badge-nav.active { transform: translateY(-1px); font-weight: 800; }
+        .nav-vector-logo { width: 36px; height: 36px; background-color: var(--brand-green); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; font-size: 1.2rem; }
+        .nav-brand-name { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; white-space: nowrap; }
+        .nav-right-cluster {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          margin-left: auto;
+          flex-shrink: 0;
+        }
+        .nav-shop-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.45rem;
+          padding: 0.72rem 1rem;
+          border-radius: 999px;
+          background: rgba(22, 163, 74, 0.08);
+          border: 1px solid rgba(22, 163, 74, 0.18);
+          color: var(--text-primary);
+          text-decoration: none;
+          font-size: 0.82rem;
+          font-weight: 700;
+          white-space: nowrap;
+          transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+          box-shadow: 0 6px 16px rgba(22, 163, 74, 0.1);
+        }
+        .nav-shop-link:hover {
+          transform: translateY(-1px);
+          background: rgba(22, 163, 74, 0.12);
+        }
+        .nav-shop-link.active {
+          background: linear-gradient(135deg, var(--brand-green) 0%, #1d7a4d 100%);
+          border-color: rgba(19, 125, 73, 0.85);
+          color: #fff;
+          box-shadow: 0 10px 22px rgba(22, 163, 74, 0.25);
+        }
+        .nav-cta-group {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 0.6rem;
+          margin-left: 0.75rem;
+        }
+        .nav-cta-link {
+          background-color: var(--brand-green); color: white; padding: 0.6rem 0.9rem; border: none; border-radius: 8px;
+          text-decoration: none; font-weight: 700; font-size: 0.82rem; display: inline-flex; align-items: center; justify-content: center;
+          gap: 0.4rem; white-space: nowrap; transition: transform 0.2s ease, opacity 0.2s ease; box-shadow: 0 10px 18px rgba(22, 163, 74, 0.18);
+        }
+        .nav-cta-link.secondary { background: #fff; color: #0f172a; border: 1px solid #dfe7ef; box-shadow: none; }
+        .nav-cta-link:hover { transform: translateY(-1px); }
+        .nav-navigation-links {
+          display: none;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 1rem;
+          margin-left: auto;
+          flex-wrap: wrap;
+        }
+        .nav-navigation-links.mobile-open { display: flex; position: fixed; top: 70px; left: 0; right: 0; width: 100vw; flex-direction: column; align-items: stretch; justify-content: flex-start; background-color: var(--bg-nav); padding: 1.5rem 1.5rem 2.5rem; border-top: 1px solid var(--border-color); z-index: 997; height: calc(100vh - 70px); overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+        .nav-navigation-links.mobile-open .nav-link-item,
+        .nav-navigation-links.mobile-open .nav-cta-btn { width: 100%; }
+        .nav-navigation-links.mobile-open .nav-link-item { padding: 1rem 0; }
+        .nav-link-item { color: var(--text-muted); text-decoration: none; font-size: 0.88rem; font-weight: 600; background: none; border: none; cursor: pointer; padding: 0.65rem 0.7rem; font-family: inherit; transition: color 0.2s ease, background-color 0.2s ease, border-radius 0.2s ease; display: flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+        .nav-link-item:hover { color: var(--text-primary); }
+        .nav-link-item.active { color: var(--text-primary); background: rgba(35, 134, 54, 0.12); border-radius: 8px; padding: 0.65rem 0.8rem; }
+        .nav-cta-btn {
+          background-color: var(--brand-green); color: white;
+          padding: 0.55rem 0.75rem;
+          border: none; border-radius: 6px;
+          text-decoration: none; font-weight: 600; font-size: 0.9rem;
+          display: inline-flex; align-items: center; justify-content: center;
+          gap: 0.45rem; white-space: nowrap;
+          min-width: 2.6rem;
+          overflow: hidden;
+          transition: min-width 0.18s ease, padding 0.18s ease;
+        }
+        .nav-cta-btn span { display: inline-block; max-width: 0; opacity: 0; overflow: hidden; transition: max-width 0.18s ease, opacity 0.18s ease; }
+        .nav-cta-btn:hover,
+        .nav-cta-btn:focus-visible {
+          min-width: 6.4rem;
+          padding: 0.55rem 0.95rem;
+          background-color: var(--brand-green-hover);
+        }
+        .nav-cta-btn:hover span,
+        .nav-cta-btn:focus-visible span { max-width: 6rem; opacity: 1; }
+        .nav-menu-toggle {
+          display: block;
+          background: none;
+          border: none;
+          color: var(--text-primary);
+          font-size: 1.55rem;
+          cursor: pointer;
+          margin-left: 0.5rem;
+        }
+
+        /* Floating WhatsApp Action */
+        .floating-action-shell {
+          position: fixed;
+          bottom: 18px;
+          right: 18px;
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 0.6rem;
+          pointer-events: none;
+        }
+        .floating-action-trigger {
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          border: none;
+          background-color: var(--brand-green);
+          color: white;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 8px 24px rgba(46, 164, 79, 0.35);
+          cursor: pointer;
+          transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+          text-decoration: none;
+          pointer-events: auto;
+          animation: bounce-default 1.7s ease-in-out infinite;
+        }
+        .floating-action-trigger:hover,
+        .floating-action-trigger:focus-visible {
+          transform: translateY(-2px);
+          background-color: #1f9b46;
+        }
+        .floating-action-trigger i {
+          font-size: 1.45rem;
+        }
+        .floating-action-tip {
+          max-width: min(220px, calc(100vw - 2rem));
+          padding: 0.55rem 0.8rem;
+          border-radius: 999px;
+          border: 1px solid rgba(35, 134, 54, 0.32);
+          background: transparent;
+          color: var(--brand-green);
+          font-size: 0.82rem;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          white-space: nowrap;
+          opacity: 0;
+          transform: translateY(6px);
+          transition: opacity 0.35s ease, transform 0.35s ease;
+          pointer-events: none;
+        }
+        .floating-action-tip.visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .scroll-to-top-btn {
+          position: fixed;
+          left: 18px;
+          bottom: 18px;
+          z-index: 9998;
+          width: 50px;
+          height: 50px;
+          border-radius: 999px;
+          border: 1px solid rgba(35, 134, 54, 0.28);
+          background: rgba(255, 255, 255, 0.9);
+          color: var(--brand-green);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+          cursor: pointer;
+          opacity: 0;
+          pointer-events: none;
+          transform: translateY(8px);
+          transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+        .scroll-to-top-btn.visible {
+          opacity: 1;
+          pointer-events: auto;
+          transform: translateY(0);
+        }
+        .scroll-to-top-btn:hover,
+        .scroll-to-top-btn:focus-visible {
+          background: var(--brand-green);
+          color: white;
+          box-shadow: 0 10px 24px rgba(35, 134, 54, 0.24);
+          transform: translateY(-2px);
+        }
+        .scroll-to-top-btn i {
+          font-size: 1.05rem;
+        }
+        @keyframes bounce-default { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+        /* Layout Framework Containers */
+        .public-website-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0;
+          padding: 92px 0 0;
+          box-sizing: border-box;
+          overflow-x: clip;
+        }
+        .public-website-container.shop-page-shell {
+          padding-top: 0;
+        }
+        
+        /* SLIDING HERO SECTION FRAMEWORKS */
+        .hero-section {
+          position: relative;
+          min-height: 100svh;
+          height: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100% !important;
+          box-sizing: border-box;
+          overflow: hidden;
+          scroll-snap-align: start;
+        }
+        .hero-slide-bg {
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background-position: center;
+          background-size: cover;
+          transition: background-image 1s ease-in-out;
+          z-index: 1;
+        }
+        @media (max-width: 420px) {
+          .hero-section { min-height: 100svh; }
+          .hero-slide-bg { background-position: center center !important; background-size: cover !important; }
+        }
+        .hero-slide-bg::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background: linear-gradient(rgba(15, 23, 42, 0.62), rgba(15, 23, 42, 0.28));
+        }
+        .hero-overlay {
+          position: relative;
+          z-index: 2;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          min-height: 100%;
+          padding: clamp(5rem, 8vh, 6rem) 1rem 2rem;
+          box-sizing: border-box;
+        }
+        .hero-copy-card {
+          width: min(100%, 1100px);
+          background: transparent;
+          border: none;
+          border-radius: 0;
+          box-shadow: none;
+          padding: 1.25rem 1rem 1.1rem;
+          text-align: center;
+          backdrop-filter: none;
+          position: relative;
+          z-index: 2;
+        }
+        .hero-copy-card h1 { font-size: clamp(2.6rem, 5vw, 4.8rem); color: #ffffff; margin-bottom: 1rem; font-weight: 900; letter-spacing: -1px; animation: bannerTextFade 0.6s ease-out; text-shadow: 0 12px 32px rgba(0,0,0,0.92); line-height: 1.01; }
+        .hero-copy-card p { font-size: clamp(1rem, 2vw, 1.35rem); color: #eff6ff; max-width: 980px; margin: 0 auto 1rem auto; line-height: 1.55; animation: bannerTextFade 0.8s ease-out; text-shadow: 0 8px 24px rgba(0,0,0,0.82); }
+        @media (max-width: 768px) {
+          .hero-copy-card h1 { font-size: clamp(1.8rem, 4vw, 2.8rem); }
+          .hero-copy-card p { font-size: clamp(0.875rem, 1.8vw, 1.1rem); }
+        }
+        @media (max-width: 480px) {
+          .hero-copy-card h1 { font-size: 1.6rem; }
+          .hero-copy-card p { font-size: 0.875rem; }
+        }
+        .hero-action-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 1rem; position: relative; z-index: 2; }
+        .hero-arrow-cluster {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 3;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          width: 100%;
+          max-width: none;
+          padding: 0 0.15rem;
+          pointer-events: none;
+        }
+        .hero-nav-btn {
+          width: 48px; height: 48px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(15, 23, 42, 0.55); color: #ffffff; display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer; box-shadow: 0 12px 30px rgba(15,23,42,0.35); transition: transform 0.2s ease, background 0.2s ease;
+          pointer-events: auto;
+          backdrop-filter: blur(6px);
+        }
+        .hero-nav-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
+        .hero-scroll-btn { min-width: 180px; }
+        @keyframes bannerTextFade { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .hero-scroll-btn { background-color: var(--brand-green); color: white; padding: 1rem 2.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 1.05rem; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.6rem; }
+        .hero-scroll-btn:hover { background-color: var(--brand-green-hover); }
+
+        .teens-kids-hero { box-sizing: border-box; }
+        .teens-welcome-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 1.25rem; }
+        .teens-welcome-card { background: white; border-radius: 20px; max-width: 760px; width: 100%; padding: 2rem; box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25); position: relative; max-height: calc(100vh - 2rem); overflow-y: auto; }
+        .teens-welcome-close-btn { position: absolute; top: 1rem; right: 1rem; background: transparent; border: none; color: #4a5568; font-size: 1.4rem; cursor: pointer; }
+
+        .teens-page-grid, .teens-info-grid, .teens-age-grid, .teens-program-grid, .teens-benefit-grid { display: grid; gap: 1.5rem; }
+        .teens-info-grid { grid-template-columns: 1fr 1fr; }
+        .teens-age-grid { grid-template-columns: 1fr 1fr; max-width: 100%; margin: 0 auto; }
+        .teens-program-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+        .teens-benefit-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+        .passport-upload-row { display: flex; gap: 1rem; align-items: flex-start; grid-column: 1 / -1; }
+        .passport-upload-preview { width: 130px; min-width: 130px; }
+        .passport-upload-preview .preview-box { width: 100%; height: 140px; border-radius: 8px; overflow: hidden; margin: 0 auto; border: 1px solid var(--border-color); background: #f7fafc; display: flex; align-items: center; justify-content: center; }
+        .passport-upload-form { flex: 1; min-width: 0; }
+        .preview-item { display: grid; grid-template-columns: minmax(140px, 1fr) 1fr; gap: 0.75rem; align-items: start; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; font-size: 0.95rem; }
+
+        .hero-slide-bg { background-position: center center; background-size: cover; }
+        .hero-slide-pic7 {
+          background-image: url("./image/pic7.png");
+          background-position: center 18%;
+          background-size: 112% auto;
+          background-repeat: no-repeat;
+        }
+        .hero-bg-contain { background-size: contain !important; background-position: center center !important; background-repeat: no-repeat !important; }
+        .hero-inline-contain-img {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          max-width: min(92vw, 900px);
+          max-height: 78vh;
+          width: auto;
+          height: auto;
+          object-fit: contain;
+          object-position: center center;
+          z-index: 2;
+        }
+        .hero-overlay { padding: 3rem 1.5rem; }
+        .hero-overlay h1 { font-size: clamp(2.6rem, 5vw, 4.8rem); line-height: 1.02; color: #ffffff; text-shadow: 0 12px 32px rgba(0,0,0,0.92); }
+        .hero-overlay p { font-size: clamp(1rem, 2vw, 1.35rem); line-height: 1.55; max-width: 100%; color: #ffffff; text-shadow: 0 8px 24px rgba(0,0,0,0.82); }
+        .hero-scroll-btn { min-width: 220px; }
+        .teens-kids-hero { padding: 4rem 2rem; display: flex; align-items: center; justify-content: center; min-height: 320px; box-sizing: border-box; }
+        .teens-kids-hero h1 { max-width: 100%; line-height: 1.05; overflow-wrap: break-word; }
+        .teens-kids-hero p { font-size: 1.2rem; max-width: 100%; line-height: 1.6; overflow-wrap: break-word; }
+        @media (max-width: 768px) {
+          .hero-copy-card h1 { font-size: 2.2rem !important; line-height: 1.08; }
+          .hero-copy-card p { font-size: 0.98rem !important; line-height: 1.45; }
+          .hero-overlay h1 { font-size: 2.2rem !important; line-height: 1.08; }
+          .hero-overlay p { font-size: 0.98rem !important; line-height: 1.45; }
+          .hero-slide-pic7 {
+            background-image: url("./image/pic8.png") !important;
+            background-position: center center;
+            background-size: cover;
+            min-height: 78vh;
+          }
+          .teens-kids-hero { padding: 1.75rem 1rem; text-align: center; min-height: 240px; align-items: center; }
+          .teens-kids-hero h1 { font-size: 2rem; line-height: 1.05; }
+          .teens-kids-hero p { font-size: 0.98rem; }
+          .teens-welcome-overlay { align-items: flex-start; overflow-y: auto; padding: 1rem 0.75rem; }
+          .teens-welcome-card { margin-top: 1rem; padding: 1.25rem; max-height: calc(100vh - 2rem); }
+          .teens-welcome-close-btn { top: 0.8rem; right: 0.8rem; font-size: 1.2rem; }
+          .teens-info-grid, .teens-age-grid, .teens-program-grid, .teens-benefit-grid { grid-template-columns: 1fr; }
+          .passport-upload-row { flex-direction: column; }
+          .passport-upload-preview { width: 100%; min-width: auto; }
+          .preview-item { grid-template-columns: 1fr; }
+          .registration-modal-panel { padding: 1.25rem 1rem 1.5rem; }
+          .registration-modal-header { flex-direction: column; align-items: stretch; }
+          .registration-modal-section { padding: 0.75rem 0; }
+          .registration-flow-step { justify-content: center; }
+          .registration-action-row { flex-direction: column; align-items: stretch; gap: 1rem; }
+          .registration-action-row .form-submit-action-btn, .registration-action-row .form-cancel-action-btn { width: 100%; }
+          .hero-scroll-btn { width: 100%; justify-content: center; }
+          .registration-preview-row { grid-template-columns: 1fr; }
+          .registration-confirmation-actions { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 420px) {
+          .hero-slide-pic7 {
+            background-position: center 10%;
+            background-size: 140% auto;
+            min-height: 72vh;
+          }
+        }
+        @media (max-width: 380px) {
+          .hero-slide-pic7 {
+            background-position: center 12%;
+            background-size: 150% auto;
+            min-height: 68vh;
+          }
+        }
+        .teens-kids-hero { padding: 1rem 0.75rem; min-height: 260px; }
+        .teens-kids-hero h1 { font-size: 1.6rem; }
+        .teens-kids-hero p { font-size: 0.9rem; }
+        .banner-slider { height: 220px; }
+        .slide-graphic { min-height: 160px; max-height: 240px; }
+        .slide-graphic img { object-fit: cover; height: 100%; }
+        .hero-bg-contain { background-size: contain !important; background-position: center center !important; }
+        .hero-inline-contain-img { max-height: 70vh; max-width: 92vw; }
+        .hero-overlay h1 { font-size: 2rem !important; }
+        .hero-overlay p { font-size: 0.95rem !important; }
+        .slide-graphic { min-height: 260px; max-height: 360px; aspect-ratio: 4 / 3; }
+        .slide-graphic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        img { max-width: 100%; height: auto; display: block; }
+
+        /* Promo slider (replaces synchronized-promo-banner) */
+        .synchronized-promo-banner { width: 100% !important; padding: 2.5rem 4rem; box-sizing: border-box; }
+        .banner-slider { position: relative; width: 100%; height: 380px; }
+        .banner-slide { position: absolute; inset: 0; display: flex; gap: 4rem; align-items: center; padding: 2rem; box-sizing: border-box; opacity: 0; transform: translateX(30px); transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none; }
+        .banner-slide.active { opacity: 1; transform: translateX(0); pointer-events: auto; }
+        .banner-text-package { display: flex; flex-direction: column; gap: 1rem; width: 55%; max-width: 800px; }
+        .banner-badge { align-self: flex-start; background-color: rgba(35, 134, 54, 0.15); color: var(--accent-green); padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; display: flex; align-items: center; gap: 0.4rem; }
+        .banner-text-package h2 { font-size: 2.4rem; font-weight: 800; color: var(--text-primary); margin: 0; line-height: 1.1; }
+        .banner-text-package p { font-size: 1.05rem; line-height: 1.6; color: var(--text-muted); margin: 0; }
+        .slide-graphic { width: 45%; height: 100%; border-radius: 12px; background-position: center; background-size: cover; box-shadow: var(--shadow-lg); border: 1px solid var(--border-color); }
+        .testimonial-author { font-size: 0.95rem; color: var(--text-muted); font-weight: 700; margin-top: auto; text-align: left; }
+        .testimonial-showcase-section { padding: 2.5rem 1.25rem 0.5rem; max-width: 1200px; margin: 0 auto; }
+        .testimonial-layout { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 1.5rem; align-items: stretch; }
+        .testimonial-slider-card { position: relative; min-height: 360px; display: block; background: linear-gradient(145deg, #ffffff, #f7f7f5); border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 24px; box-shadow: 0 24px 60px rgba(17, 24, 39, 0.08); overflow: hidden; }
+        .testimonial-slide-panel { position: relative; inset: auto; display: none; flex-direction: column; justify-content: space-between; gap: 1rem; padding: 2rem; width: 100%; height: 100%; min-height: 360px; box-sizing: border-box; opacity: 0; transform: translateX(18px); transition: opacity 0.45s ease, transform 0.45s ease; }
+        .testimonial-slide-panel.active { display: flex; opacity: 1; transform: translateX(0); }
+        .testimonial-slide-content { display: flex; flex-direction: column; gap: 1rem; height: 100%; width: 100%; max-width: 100%; }
+        .testimonial-badge { display: inline-flex; align-items: center; gap: 0.5rem; align-self: flex-start; background: rgba(34, 197, 94, 0.12); color: #166534; border-radius: 999px; padding: 0.45rem 0.85rem; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 800; }
+        .testimonial-quote { margin: 0; color: #1f2937; font-size: clamp(1.1rem, 1.8vw, 1.5rem); line-height: 1.7; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+        .testimonial-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(148, 163, 184, 0.3); flex-wrap: wrap; }
+        .testimonial-origin { font-size: 0.8rem; color: #4b5563; font-weight: 700; }
+        .testimonial-form-card { background: #ffffff; border: 1px solid rgba(15, 23, 42, 0.08); border-radius: 24px; box-shadow: 0 24px 60px rgba(17, 24, 39, 0.08); padding: 1.5rem; }
+        .testimonial-form-card h3 { margin: 0 0 1rem; color: #111827; font-size: clamp(1.5rem, 2vw, 2rem); }
+        .testimonial-form { display: flex; flex-direction: column; gap: 1rem; }
+        .testimonial-field { display: flex; flex-direction: column; gap: 0.45rem; }
+        .testimonial-field label { font-size: 0.8rem; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.06em; }
+        .testimonial-field input, .testimonial-field textarea { width: 100%; border: 1px solid #dbe2ea; border-radius: 12px; background: #f8fafc; color: #111827; padding: 0.85rem 0.95rem; font: inherit; box-sizing: border-box; }
+        .testimonial-field input:focus, .testimonial-field textarea:focus { outline: none; border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12); }
+        .testimonial-field textarea { min-height: 120px; resize: vertical; }
+        .testimonial-submit-btn { border: none; border-radius: 12px; background: linear-gradient(135deg, #1f7a58, #22c55e); color: white; font-weight: 700; padding: 0.95rem 1.2rem; cursor: pointer; box-shadow: 0 16px 32px rgba(34, 197, 94, 0.25); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .testimonial-submit-btn:hover { transform: translateY(-1px); box-shadow: 0 20px 38px rgba(34, 197, 94, 0.3); }
+        .testimonial-status { margin: 0; min-height: 1.2rem; font-size: 0.9rem; color: #166534; font-weight: 600; }
+        .testimonial-controls { position: absolute; right: 1.25rem; bottom: 1.25rem; display: flex; align-items: center; gap: 0.8rem; }
+        .testimonial-controls .banner-arrow { width: 36px; height: 36px; }
+        .testimonial-slider-header { margin-bottom: 1rem; }
+        .testimonial-intro { max-width: 680px; margin: 0.9rem auto 0; color: #5b6472; font-size: 1rem; line-height: 1.7; }
+        .testimonial-review-context { display: flex; align-items: center; gap: 0.55rem; color: #718096; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+        .testimonial-review-context i { color: #e88767; font-size: 0.9rem; }
+        @media (min-width: 769px) { .testimonial-showcase-section { padding-top: 4.25rem; padding-bottom: 2rem; } .testimonial-slider-header { margin-bottom: 2.25rem !important; } .testimonial-slider-card { min-height: 430px; border-radius: 28px; background: linear-gradient(135deg, #ffffff 0%, #f4f8f5 100%); border-color: rgba(30, 125, 91, 0.18); box-shadow: 0 28px 70px rgba(30, 60, 46, 0.12); } .testimonial-slide-panel { min-height: 430px; padding: 3rem 3.25rem; } .testimonial-quote { max-width: 680px; font-size: clamp(1.35rem, 2.1vw, 1.85rem); line-height: 1.65; } .testimonial-review-context { margin-top: 0.35rem; } .testimonial-form-card { padding: 2rem; } }
+        @media (max-width: 768px) { .testimonial-author { text-align: center; margin-top: 0.5rem; } .testimonial-layout { grid-template-columns: 1fr; } .testimonial-slider-card { min-height: 300px; } .testimonial-slide-panel { padding: 1.25rem; min-height: 300px; } .testimonial-quote { -webkit-line-clamp: 5; font-size: clamp(1rem, 1.8vw, 1.2rem); line-height: 1.6; } .testimonial-meta { align-items: flex-start; } .testimonial-form-card { padding: 1.2rem; } .testimonial-controls { position: static; justify-content: center; margin-top: 0.5rem; width: 100%; } .synchronized-promo-banner { padding: 1.25rem; } .banner-slider { height: auto; min-height: auto; position: relative; } .banner-slide { position: static !important; display: none; opacity: 1 !important; transform: none !important; transition: none; flex-direction: column; gap: 1rem; padding: 1rem; align-items: stretch; } .banner-slide.active { display: flex; } .banner-text-package { width: 100%; gap: 0.75rem; } .banner-badge { font-size: 0.75rem; padding: 0.3rem 0.8rem; } .banner-text-package p { font-size: 0.9rem; line-height: 1.5; } .slide-graphic { width: 100%; height: 180px; margin: 0.5rem 0 0 0; } }
+        @media (max-width: 480px) { .synchronized-promo-banner { padding: 0.75rem; } .banner-slide { padding: 0.75rem; gap: 0.6rem; } .banner-text-package { gap: 0.5rem; } .banner-badge { font-size: 0.65rem; padding: 0.25rem 0.6rem; } .banner-text-package p { font-size: 0.8rem; line-height: 1.4; } .slide-graphic { height: 140px; } }
+        .banner-controls { position: absolute; right: 18px; bottom: 12px; display: flex; gap: 1rem; align-items: center; }
+        .banner-dots-wrapper { display: flex; gap: 0.6rem; }
+        .banner-arrow { width: 40px; height: 40px; border-radius: 50%; background: rgba(34, 197, 94, 0.2); border: 1px solid var(--brand-green); color: var(--brand-green); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; font-size: 1rem; }
+        .banner-arrow:hover { background: var(--brand-green); color: #fff; transform: scale(1.1); }
+        @media (max-width: 768px) { .banner-controls { position: relative; right: auto; bottom: auto; justify-content: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); gap: 0.75rem; } .banner-arrow { width: 36px; height: 36px; font-size: 0.9rem; } .read-more-btn { font-size: 0.9rem; } }
+        @media (max-width: 480px) { .banner-controls { gap: 0.5rem; } .banner-arrow { width: 32px; height: 32px; font-size: 0.8rem; } .banner-dots-wrapper { gap: 0.4rem; } }
+        .banner-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-color); cursor: pointer; border: none; transition: all 0.2s ease; }
+        .banner-dot:hover { background: rgba(34, 197, 94, 0.5); }
+        .banner-dot.active { background: var(--brand-green); width: 28px; border-radius: 5px; }
+        .review-text { margin: 0; line-height: 1.6; color: var(--text-primary); }
+        .read-more-btn { background: transparent; border: none; color: var(--brand-green); font-weight: 600; cursor: pointer; margin-top: 0.75rem; font-size: 0.95rem; display: inline-flex; align-items: center; transition: all 0.2s ease; }
+        .read-more-btn:hover { transform: translateX(4px); }
+        .review-modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 10001; padding: 1rem; margin-top: 70px; }
+        .review-modal-content { background: var(--bg-card); border-radius: 16px; padding: 2rem; max-width: 600px; width: 100%; max-height: 80vh; overflow-y: auto; position: relative; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); animation: modalSlideIn 0.3s ease; }
+        @keyframes modalSlideIn { from { opacity: 0; transform: scale(0.95) translateY(-20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .review-modal-close { position: absolute; top: 1.25rem; right: 1.25rem; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.2rem; color: var(--text-primary); transition: all 0.2s ease; }
+        .review-modal-close:hover { background: var(--brand-green); border-color: var(--brand-green); color: #fff; }
+        .review-modal-header { margin-bottom: 1.5rem; }
+        .review-modal-badge { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(34, 197, 94, 0.1); color: var(--brand-green); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem; }
+        .review-modal-header h3 { margin: 0.75rem 0 0 0; font-size: 1.4rem; color: var(--text-primary); }
+        .review-modal-text { margin: 0; line-height: 1.8; color: var(--text-primary); font-size: 1rem; }
+        @media (max-width: 768px) { .review-modal-content { padding: 1.5rem; max-height: 70vh; } .review-modal-close { width: 36px; height: 36px; font-size: 1rem; } .review-modal-header h3 { font-size: 1.2rem; } .review-modal-text { font-size: 0.95rem; } }
+        @media (max-width: 480px) { .review-modal-overlay { padding: 0.5rem; } .review-modal-content { padding: 1rem; border-radius: 12px; max-height: 75vh; } .review-modal-badge { font-size: 0.8rem; padding: 0.4rem 0.8rem; } .review-modal-header h3 { font-size: 1.1rem; } .review-modal-text { font-size: 0.9rem; line-height: 1.6; } }
+
+        /* INTENTIONAL DEDICATED REGISTRATION INTAKE SHIELDS */
+        .intake-registration-section { width: 100% !important; background-color: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 6rem 4rem; box-sizing: border-box; }
+        @media (max-width: 768px) { .intake-registration-section { padding: 3rem 1.5rem; } }
+        .intake-form-wrapper { max-width: 750px; margin: 0 auto; background-color: var(--bg-main); border: 1px solid var(--border-color); border-radius: 16px; padding: 4rem; box-shadow: var(--shadow-lg); }
+        @media (max-width: 768px) { .intake-form-wrapper { padding: 1.75rem; border-radius: 12px; } }
+        .intake-form-wrapper h3 { font-size: 2.2rem; font-weight: 800; margin: 0 0 0.5rem 0; color: var(--text-primary); letter-spacing: -0.5px; text-align: center; }
+        @media (max-width: 768px) { .intake-form-wrapper h3 { font-size: 1.5rem; } }
+        .intake-form-wrapper p { font-size: 1.1rem; color: var(--text-muted); text-align: center; margin: 0 0 3rem 0; }
+        @media (max-width: 768px) { .intake-form-wrapper p { font-size: 0.95rem; margin: 0 0 1.5rem 0; } }
+        .registration-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.75rem; }
+        @media (max-width: 768px) { .registration-fields-grid { grid-template-columns: 1fr; } }
+
+        .registration-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.75);
+          z-index: 20000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1.25rem;
+          overflow-y: auto;
+          overflow-x: hidden;
+        }
+        .registration-modal-panel {
+          width: min(100%, 960px);
+          max-width: 100%;
+          max-height: 95vh;
+          overflow-y: auto;
+          background: var(--bg-main);
+          border: 1px solid var(--border-color);
+          border-radius: 22px;
+          padding: 2rem 2.5rem;
+          box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+          position: relative;
+          margin: 0 auto;
+          box-sizing: border-box;
+        }
+        @media (max-width: 768px) {
+          .registration-modal-overlay {
+            align-items: flex-start;
+            justify-content: center;
+            padding: 0.75rem 0.5rem;
+          }
+          .registration-modal-panel {
+            width: 100%;
+            max-width: 100%;
+            max-height: calc(100vh - 1.5rem);
+            padding: 1rem 0.9rem 1.25rem;
+            margin-top: 0.75rem;
+            border-radius: 18px;
+          }
+          .registration-modal-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+          }
+          .registration-modal-close-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            margin-left: 0;
+          }
+          .registration-modal-section {
+            padding: 0.5rem 0;
+          }
+          .registration-flow-step {
+            justify-content: center;
+          }
+          .registration-flow-step span {
+            flex: 1 1 auto;
+            min-width: 0;
+          }
+          .registration-fields-grid {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+          }
+          .passport-upload-row {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .passport-upload-preview {
+            width: 100%;
+            min-width: auto;
+          }
+          .passport-upload-preview .preview-box {
+            min-height: 180px;
+          }
+          .registration-payment-row {
+            grid-template-columns: 1fr;
+          }
+          .registration-action-row {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.9rem;
+          }
+          .registration-action-row .form-submit-action-btn,
+          .registration-action-row .form-cancel-action-btn {
+            width: 100%;
+            min-width: 0;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.85rem !important;
+          }
+          .registration-preview-row {
+            grid-template-columns: 1fr;
+          }
+          .registration-preview-header {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.75rem;
+          }
+          .registration-preview-header button {
+            width: 100%;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.85rem !important;
+            margin-left: 0 !important;
+          }
+          .registration-preview-photo {
+            min-height: 180px;
+          }
+          .preview-item {
+            grid-template-columns: 1fr;
+          }
+          .registration-confirmation-actions {
+            grid-template-columns: 1fr;
+          }
+        }
+        .registration-modal-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+          margin-bottom: 1.5rem;
+        }
+        .registration-modal-header h3 { margin: 0; font-size: 2rem; color: var(--text-primary); }
+        .registration-modal-close-btn {
+          width: 44px;
+          height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          background: var(--bg-card);
+          color: var(--text-primary);
+          cursor: pointer;
+          position: sticky;
+          top: 1rem;
+          margin-left: auto;
+          z-index: 10;
+        }
+        .registration-modal-section { margin-bottom: 1.5rem; }
+        .registration-modal-section h4 { margin: 0 0 0.75rem 0; font-size: 1.05rem; color: var(--text-primary); }
+        .registration-modal-section p { color: var(--text-muted); line-height: 1.75; margin: 0 0 1rem 0; }
+        .registration-flow-nav { margin-bottom: 1.25rem; }
+        .registration-flow-step { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+        .registration-flow-step span { padding: 0.65rem 0.95rem; border-radius: 999px; border: 1px solid #d1d5db; background: #f8fafc; color: #374151; font-size: 0.9rem; font-weight: 700; white-space: nowrap; }
+        .registration-flow-step span.active { background: var(--brand-green); border-color: transparent; color: white; }
+        .registration-action-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-top: 1.25rem; }
+        .registration-action-row .form-submit-action-btn, .registration-action-row .form-cancel-action-btn { min-width: 140px; }
+        @media (max-width: 768px) { .registration-action-row { flex-direction: column; align-items: stretch; gap: 0.75rem; } .registration-action-row .form-submit-action-btn, .registration-action-row .form-cancel-action-btn { width: 100%; min-width: 0; padding: 0.5rem 0.75rem !important; font-size: 0.85rem !important; } }
+        .registration-checklist-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+        @media (max-width: 768px) { .registration-checklist-grid { grid-template-columns: 1fr; } }
+        .checkbox-card { display: flex; align-items: flex-start; gap: 0.8rem; padding: 1rem 1rem 1rem 0.95rem; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-card); }
+        .checkbox-card input { margin-top: 5px; }
+        .registration-payment-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: flex-end; margin-top: 1rem; }
+        @media (max-width: 768px) { .registration-payment-row { grid-template-columns: 1fr; } }
+        .registration-prompt-banner { margin-bottom: 1rem; padding: 1rem 1.15rem; border-radius: 14px; background: rgba(35, 134, 54, 0.1); border: 1px solid rgba(35, 134, 54, 0.16); color: var(--text-primary); }
+        .payment-status-message { margin: 1rem 0 0 0; color: var(--brand-green); font-weight: 700; }
+
+        .registration-preview-card {
+          margin-top: 1.5rem;
+          background: white;
+          border: 1px solid #d1d5db;
+          border-radius: 22px;
+          padding: 1.5rem;
+          box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+          color: #111827;
+        }
+        .registration-preview-header {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          margin-bottom: 1rem;
+          flex-wrap: wrap;
+        }
+        .registration-preview-header h4 {
+          margin: 0;
+          font-size: 1.25rem;
+          color: #111827;
+        }
+        .registration-preview-row {
+          display: grid;
+          grid-template-columns: 140px 1fr;
+          gap: 1.25rem;
+          align-items: flex-start;
+        }
+        .registration-preview-photo {
+          width: 100%;
+          min-height: 140px;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid #d1d5db;
+          background: #f8fafc;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .registration-preview-photo-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        .registration-preview-photo-placeholder {
+          color: #6b7280;
+          padding: 1rem;
+          text-align: center;
+          font-size: 0.95rem;
+        }
+        .registration-preview-details {
+          display: grid;
+          gap: 0.75rem;
+        }
+        .preview-item {
+          display: grid;
+          grid-template-columns: 180px 1fr;
+          gap: 0.75rem;
+          align-items: start;
+          padding: 0.75rem 0;
+          border-bottom: 1px solid #e5e7eb;
+          font-size: 0.95rem;
+        }
+        .preview-item span {
+          font-weight: 700;
+          color: #111827;
+        }
+        .registration-confirmation-card {
+          margin-top: 1.5rem;
+          background: white;
+          border: 1px solid #d1d5db;
+          border-radius: 22px;
+          padding: 1.75rem;
+          box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+          color: #111827;
+        }
+        .registration-confirmation-card h3 {
+          margin-top: 0;
+          margin-bottom: 0.75rem;
+          font-size: 1.6rem;
+        }
+        .registration-confirmation-card p {
+          margin: 0 0 1.25rem 0;
+          color: #374151;
+          line-height: 1.75;
+        }
+        .registration-confirmation-actions {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 0.75rem;
+        }
+        @media (max-width: 768px) {
+          .registration-preview-row { grid-template-columns: 1fr; }
+          .registration-confirmation-actions { grid-template-columns: 1fr; }
+          .registration-confirmation-actions button {
+            width: 100%;
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.85rem !important;
+          }
+        }
+        @media print {
+          .registration-modal-overlay { background: transparent !important; }
+          .registration-modal-panel { box-shadow: none !important; border: none !important; width: 100% !important; max-height: none !important; overflow: visible !important; padding: 0 !important; }
+          .registration-modal-header, .form-submit-action-btn, .form-cancel-action-btn, .registration-modal-close-btn, .registration-preview-header button { display: none !important; }
+          .registration-preview-card, .registration-confirmation-card { box-shadow: none !important; border: none !important; }
+          .preview-item { border-color: #d1d5db !important; }
+        }
+
+        .bottom-registration-panel { background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 22px; padding: 2rem 2.25rem; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.1); }
+        .bottom-registration-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 1.25rem; }
+        .section-label { display: inline-flex; margin-bottom: 0.85rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brand-green); }
+        .bottom-registration-header h3 { margin: 0 0 0.5rem 0; font-size: 2rem; color: var(--text-primary); }
+        .section-description { margin: 0; color: var(--text-muted); line-height: 1.75; max-width: 720px; }
+        .bottom-registration-body { margin-top: 1.75rem; }
+        .intake-form-toggle-btn { background: var(--brand-green); color: #fff; padding: 0.95rem 1.4rem; border: none; border-radius: 12px; cursor: pointer; font-weight: 700; display: inline-flex; align-items: center; gap: 0.6rem; }
+        .intake-form-toggle-btn:hover { background: var(--brand-green-hover); }
+        .intake-collapsed-note { color: var(--text-muted); margin-top: 1.75rem; padding: 1.5rem 1.25rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; }
+        .applicants-table-wrapper { width: 100%; overflow-x: auto; margin-top: 1.5rem; }
+        .dashboard-table { width: 100%; border-collapse: collapse; min-width: 100%; }
+        .dashboard-table th,
+        .dashboard-table td { padding: 0.95rem 0.85rem; border: 1px solid var(--border-color); text-align: left; vertical-align: middle; font-size: 0.9rem; }
+        .dashboard-table th { background: var(--bg-main); color: var(--text-primary); font-weight: 700; }
+        .dashboard-table tbody tr:hover { background: rgba(46, 164, 79, 0.06); }
+        .applicants-table-wrapper { width: 100%; overflow-x: auto; margin-top: 1.5rem; -webkit-overflow-scrolling: touch; border-radius: 10px; border: 1px solid var(--border-color); }
+        .status-pill { display: inline-flex; padding: 0.35rem 0.8rem; border-radius: 6px; font-size: 0.8rem; font-weight: 700; }
+        .status-pill.success { background: rgba(35, 134, 54, 0.14); color: var(--accent-green); }
+        .status-pill.pending { background: rgba(255, 231, 179, 0.6); color: #b58304; }
+        .portal-data-metrics-row { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }
+        .portal-metric-card {
+          background: #ffffff;
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          box-shadow: 0 18px 35px rgba(15, 23, 42, 0.06);
+          padding: 1.5rem;
+          border-radius: 18px;
+        }
+        .portal-metric-card h4 {
+          color: #475569;
+          font-size: 0.85rem;
+          margin-bottom: 0.65rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .portal-status-text { margin: 0; font-size: 2rem; color: #0f172a; font-weight: 700; }
+        .portal-scope-text { margin: 0.75rem 0 0 0; color: #64748b; font-size: 0.95rem; line-height: 1.6; }
+        .portal-data-metrics-row .portal-metric-card:nth-child(1) { border-left: 4px solid #34d399; }
+        .portal-data-metrics-row .portal-metric-card:nth-child(2) { border-left: 4px solid #38bdf8; }
+        .portal-data-metrics-row .portal-metric-card:nth-child(3) { border-left: 4px solid #fbbf24; }
+        .portal-data-metrics-row .portal-metric-card:nth-child(4) { border-left: 4px solid #a855f7; }
+
+        /* SERVICE VIEW SLIDING HERO BANNER SPECIFICS */
+        .service-view-hero-banner { 
+          position: relative;
+          min-height: 420px; 
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%; 
+          box-sizing: border-box; 
+          overflow: hidden; 
+        }
+        .service-banner-bg {
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background-position: center;
+          background-size: cover;
+          transition: background-image 1s ease-in-out;
+          z-index: 1;
+        }
+        .service-banner-bg::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background: linear-gradient(rgba(7, 12, 18, 0.70), rgba(7, 12, 18, 0.82));
+        }
+        .service-banner-content {
+          position: relative;
+          z-index: 2;
+          text-align: center;
+          padding: 2rem;
+          max-width: 900px;
+          background: linear-gradient(rgba(8, 13, 20, 0.45), rgba(8, 13, 20, 0.55));
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 24px;
+          box-shadow: 0 18px 45px rgba(0,0,0,0.28);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+        }
+        .service-view-hero-banner h1 { font-size: 3.5rem; font-weight: 800; color: #ffffff; margin: 0 0 1rem 0; letter-spacing: -1px; animation: bannerTextFade 0.6s ease-out; }
+        .service-view-hero-banner p { font-size: 1.3rem; color: #eff4f8; max-width: 800px; margin: 0 auto; line-height: 1.6; animation: bannerTextFade 0.8s ease-out; }
+        .service-banner-controls { display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+        .service-banner-btn {
+          border: 1px solid rgba(255,255,255,0.18);
+          background: rgba(255,255,255,0.08);
+          color: #ffffff;
+          border-radius: 999px;
+          padding: 0.55rem 0.8rem;
+          cursor: pointer;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+        }
+        .service-banner-btn:hover { background: rgba(255,255,255,0.16); }
+        .service-banner-dot { width: 10px; height: 10px; border-radius: 999px; border: none; background: rgba(255,255,255,0.45); cursor: pointer; padding: 0; }
+        .service-banner-dot.active { background: #ffffff; width: 28px; border-radius: 999px; box-shadow: 0 0 0 4px rgba(255,255,255,0.14); }
+        
+        .service-content-split-zone { padding: 6rem 4rem; display: grid; grid-template-columns: 1.5fr 1fr; gap: 4rem; width: 100%; box-sizing: border-box; }
+        @media (max-width: 992px) { .service-content-split-zone { grid-template-columns: 1fr; padding: 4rem 1.5rem; gap: 2.5rem; } }
+        @media (max-width: 768px) { .service-content-split-zone { padding: 2.5rem 1rem; gap: 1.5rem; } }
+        
+        .service-info-narrative-card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 3.5rem; box-shadow: var(--shadow-sm); }
+        @media (max-width: 768px) { .service-info-narrative-card { padding: 1.75rem; } }
+        .service-info-narrative-card h2 { font-size: 2.2rem; font-weight: 800; color: var(--text-primary); margin: 0 0 0.5rem 0; }
+        .service-info-narrative-card h4 { font-size: 1.25rem; color: var(--accent-green); margin: 0 0 2rem 0; font-weight: 600; }
+        .service-info-narrative-card p { font-size: 1.2rem; line-height: 1.75; color: var(--text-muted); margin-bottom: 2.5rem; }
+        
+        .service-sidebar-news-stack { display: flex; flex-direction: column; gap: 2rem; }
+        .topic-news-card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 2rem; box-shadow: var(--shadow-sm); }
+        .topic-news-card h5 { font-size: 1.1rem; font-weight: 700; color: var(--brand-blue); margin: 0 0 0.75rem 0; display: flex; align-items: center; gap: 0.5rem; }
+        .topic-news-card h3 { font-size: 1.4rem; font-weight: 800; color: var(--text-primary); margin: 0 0 1rem 0; }
+        .topic-news-card p { font-size: 1rem; line-height: 1.6; color: var(--text-muted); margin: 0; }
+
+        /* ENROLLMENT CLASS CARDS & PROGRAM SECTIONS */
+        .enrollment-class-card { 
+          position: relative; 
+          overflow: hidden; 
+          background-clip: border-box;
+        }
+        .enrollment-class-card button {
+          width: 100%;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        @media (max-width: 768px) {
+          .enrollment-class-card {
+            padding: 1.25rem !important;
+          }
+          .enrollment-class-card h4 {
+            font-size: 1rem;
+          }
+          .enrollment-class-card button {
+            padding: 0.7rem 1rem !important;
+            font-size: 0.9rem;
+          }
+        }
+
+        /* FOUNDER / CEO MULTI-MESSAGE INTERACTIVE EXECUTIVE SUITE */
+        .founder-executive-suite {
+          width: 100% !important; background-color: var(--bg-main); border-bottom: 1px solid var(--border-color);
+          padding: 5rem 4rem; box-sizing: border-box; display: grid; grid-template-columns: 1fr 1.5fr; gap: 3rem; align-items: center; z-index: 3;
+        }
+        .teachable-moments-section { width: 100%; padding: 4.5rem 4rem; box-sizing: border-box; background: var(--bg-main); border-bottom: 1px solid var(--border-color); }
+        .founder-video-feature { width: 100%; max-width: 1180px; margin: 0 auto; padding: 2rem; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-card); box-sizing: border-box; }
+        .founder-video-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; margin-bottom: 1.5rem; }
+        .founder-video-eyebrow { display: inline-flex; align-items: center; gap: 0.45rem; color: #e11d48; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+        .founder-video-heading h2 { margin: 0.45rem 0 0.5rem; color: var(--text-primary); font-size: 2rem; line-height: 1.15; }
+        .founder-video-heading p { max-width: 700px; margin: 0; color: var(--text-muted); line-height: 1.6; }
+        .founder-video-playlist-note { display: inline-block; margin-top: 0.65rem; color: var(--brand-green); font-size: 0.82rem; font-weight: 800; }
+        .founder-video-controls { display: flex; align-items: center; gap: 0.8rem; color: var(--text-muted); font-weight: 700; white-space: nowrap; }
+        .founder-video-controls button { width: 2.3rem; height: 2.3rem; border: 1px solid var(--border-color); border-radius: 50%; background: var(--bg-main); color: var(--text-primary); cursor: pointer; }
+        .founder-video-controls button:hover:not(:disabled) { border-color: var(--brand-green); color: var(--brand-green); }
+        .founder-video-controls button:disabled { cursor: not-allowed; opacity: 0.45; }
+        .founder-video-embed-wrap { width: 100%; aspect-ratio: 16 / 7; min-height: 280px; overflow: hidden; border-radius: 12px; background: #000; }
+        .founder-video-embed-wrap iframe { width: 100%; height: 100%; min-height: 280px; border: 0; display: block; }
+        .founder-video-empty-state { width: 100%; height: 100%; min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; color: #fff; font-size: 1rem; text-align: center; }
+        .founder-video-empty-state i { color: #ef4444; font-size: 2.5rem; }
+        .founder-portrait-frame { width: 100%; height: 520px; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-lg); border: 1px solid var(--border-color); position: relative; display: block; }
+        .founder-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        @media (max-width: 768px) { .founder-portrait-frame { height: 400px; } }
+
+        .choice-option-tile { flex: 1; text-align: center; padding: 1rem 1.25rem; border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color); background: var(--bg-main); transition: transform 0.12s ease, box-shadow 0.12s ease; }
+        .choice-option-tile:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.25); }
+        .founder-title-tag-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.85)); padding: 2rem 1.5rem 1.5rem 1.5rem; color: white; }
+        .founder-title-tag-overlay h4 { margin: 0; font-size: 1.3rem; font-weight: 700; color: #ffffff; }
+        .founder-title-tag-overlay span { display: block; font-size: 0.9rem; color: var(--brand-blue); font-weight: 600; margin-top: 0.25rem; }
+        .founder-title-tag-overlay span:nth-of-type(2) { color: #ffcc66; }
+        .founder-interactive-message-box { display: flex; flex-direction: column; gap: 2rem; }
+        .founder-msg-nav-row { display: flex; gap: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; flex-wrap: wrap; }
+        .founder-nav-pill { background: none; border: none; font-family: inherit; color: var(--text-muted); font-size: 1rem; font-weight: 700; padding: 0.5rem 1rem; cursor: pointer; position: relative; transition: color 0.2s; display: flex; align-items: center; gap: 0.5rem; }
+        .founder-nav-pill:hover { color: var(--text-primary); }
+        .founder-nav-pill.active { color: var(--brand-green); }
+        .founder-nav-pill.active::after { content: ''; position: absolute; bottom: -17px; left: 0; right: 0; height: 3px; background-color: var(--brand-green); border-radius: 2px; }
+        
+        .animated-message-viewspace { min-height: 250px; animation: messageSlideEffect 0.6s cubic-bezier(0.25, 1, 0.5, 1) both; }
+        @keyframes messageSlideEffect { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        
+        .speech-quote-text { font-size: 1.4rem; line-height: 1.7; color: var(--text-primary); font-style: italic; margin: 0 0 1.5rem 0; font-weight: 500; }
+        .speech-signature { font-size: 1rem; color: var(--text-muted); font-weight: 600; }
+        .about-org-block h3 { font-size: 1.8rem; margin: 0 0 1rem 0; color: var(--text-primary); font-weight: 800; }
+        .about-org-block p { font-size: 1.15rem; line-height: 1.75; color: var(--text-muted); margin: 0; }
+        .core-values-matrix { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .value-card-element { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 1.25rem; border-radius: 8px; box-shadow: var(--shadow-sm); }
+        .value-card-element h5 { margin: 0 0 0.4rem 0; font-size: 1.1rem; color: var(--accent-green); font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+        .value-card-element p { margin: 0; font-size: 0.95rem; color: var(--text-muted); line-height: 1.5; }
+
+        /* AUTOMATIC SLIDING MISSION & VISION MARQUEE PANEL Styles */
+        .marquee-statements-section {
+          width: 100% !important; background-color: var(--bg-card); border-bottom: 1px solid var(--border-color);
+          padding: 6rem 4rem; box-sizing: border-box; overflow: hidden; text-align: center; position: relative;
+        }
+        .marquee-viewport-container { max-width: 950px; margin: 0 auto; position: relative; min-height: 220px; }
+        .sliding-statement-card { animation: slideStatementIn 0.65s cubic-bezier(0.25, 1, 0.5, 1) both; }
+        @keyframes slideStatementIn { 0% { opacity: 0; transform: translateX(50px); } 100% { opacity: 1; transform: translateX(0); } }
+        .statement-pill-type { display: inline-flex; align-items: center; gap: 0.6rem; background-color: rgba(88,166,255,0.1); color: var(--brand-blue); padding: 0.4rem 1.2rem; border-radius: 30px; font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1.5rem; }
+        .sliding-statement-card h3 { font-size: 2.4rem; font-weight: 800; color: var(--text-primary); margin: 0 0 1.2rem 0; letter-spacing: -0.5px; }
+        .sliding-statement-card p { font-size: 1.3rem; line-height: 1.75; color: var(--text-muted); margin: 0; max-width: 850px; margin: 0 auto; }
+        .slide-dots-indicator-track { display: flex; justify-content: center; gap: 0.75rem; margin-top: 3rem; }
+        .indicator-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-color); cursor: pointer; transition: all 0.3s ease; border: none; padding: 0; }
+        .indicator-dot.active { background: var(--brand-green); width: 28px; border-radius: 5px; }
+
+        /* EMBEDDED SOCIAL MEDIA NEWS AND UPDATES AUTOMATIC STREAM SCREEN */
+        .social-news-stream-section {
+          width: 100% !important; background-color: var(--bg-main); border-bottom: 1px solid var(--border-color);
+          padding: 6rem 4rem; box-sizing: border-box; overflow-x: hidden;
+        }
+        .social-news-layout-wrapper { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 3rem; }
+        @media (max-width: 768px) { .social-news-layout-wrapper { gap: 1.5rem; padding: 0 1rem; box-sizing: border-box; } }
+        .social-news-header-zone { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1.5rem; }
+        @media (max-width: 768px) { .social-news-header-zone { flex-direction: column; align-items: flex-start; gap: 1rem; } }
+        .social-news-title-stack h2 { font-size: 2.6rem; font-weight: 800; color: var(--text-primary); margin: 0 0 0.5rem 0; letter-spacing: -0.5px; }
+        @media (max-width: 768px) { .social-news-title-stack h2 { font-size: 1.8rem; } }
+        .social-news-title-stack p { font-size: 1.15rem; color: var(--text-muted); margin: 0; }
+        .social-platform-indicator-badges { display: flex; gap: 0.75rem; }
+        @media (max-width: 768px) { .social-platform-indicator-badges { flex-wrap: wrap; gap: 0.5rem; } }
+        .platform-badge-nav { background-color: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.6rem 1.2rem; border-radius: 20px; font-weight: 700; font-size: 0.9rem; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 0.5rem; }
+        @media (max-width: 768px) { .platform-badge-nav { padding: 0.5rem 0.8rem; font-size: 0.8rem; } }
+        .platform-badge-nav.active-facebook { border-color: #1877F2; color: #1877F2; background-color: rgba(24,119,242,0.08); }
+        .platform-badge-nav.active-instagram { border-color: #E1306C; color: #E1306C; background-color: rgba(225,48,108,0.08); }
+        .platform-badge-nav.active-youtube { border-color: #FF0000; color: #FF0000; background-color: rgba(255,0,0,0.08); }
+        
+        .social-news-broadcast-anchor-card {
+          display: block; text-decoration: none; color: inherit; background-color: var(--bg-card);
+          border: 1px solid var(--border-color); border-radius: 16px; padding: 4rem; box-shadow: var(--shadow-lg);
+          cursor: pointer; position: relative; overflow: hidden; transition: border-color 0.3s ease, transform 0.2s ease;
+        }
+        .social-news-broadcast-anchor-card:hover { transform: translateY(-2px); }
+        .social-slide-screen-viewport { animation: newsScreenFadeIn 0.7s cubic-bezier(0.25, 1, 0.5, 1) both; }
+        @keyframes newsScreenFadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) { .social-slide-screen-viewport { animation: none; } .social-news-broadcast-anchor-card { padding: 1.5rem; } }
+        
+        .broadcast-meta-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; }
+        @media (max-width: 768px) { .broadcast-meta-row { flex-direction: column; align-items: flex-start; gap: 0.75rem; margin-bottom: 1rem; padding-bottom: 0.75rem; } }
+        .meta-platform-identity { display: flex; align-items: center; gap: 0.75rem; font-size: 1.2rem; font-weight: 800; }
+        .meta-type-badge { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; padding: 0.35rem 0.85rem; border-radius: 6px; color: white; }
+        @media (max-width: 768px) { .meta-type-badge { font-size: 0.75rem; padding: 0.25rem 0.6rem; } }
+        .broadcast-content-body h3 { font-size: 2.2rem; font-weight: 800; color: var(--text-primary); margin: 0 0 1.25rem 0; line-height: 1.3; }
+        .broadcast-content-body p { font-size: 1.25rem; line-height: 1.7; color: var(--text-muted); margin: 0 0 2rem 0; }
+        @media (max-width: 768px) { .broadcast-content-body h3 { font-size: 1.5rem; margin: 0 0 0.75rem 0; } .broadcast-content-body p { font-size: 1rem; margin: 0 0 1rem 0; } }
+        .broadcast-action-footer { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 1.05rem; }
+        .broadcast-action-footer i { transition: transform 0.2s; }
+        .social-news-broadcast-anchor-card:hover .broadcast-action-footer i { transform: translateX(5px); }
+
+        /* FAQ Section Styles */
+        .faq-main-section { width: 100% !important; background-color: var(--bg-main); padding: 6rem 4rem; box-sizing: border-box; }
+        .faq-container-wrapper { max-width: 900px; margin: 0 auto; }
+        .faq-header-block { text-align: center; margin-bottom: 3rem; }
+        .faq-section-label { display: inline-block; font-size: 0.85rem; font-weight: 700; color: var(--brand-green); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .faq-header-block h2 { font-size: 2.6rem; font-weight: 800; color: var(--text-primary); margin: 0.5rem 0 1rem 0; }
+        .faq-header-block p { font-size: 1.1rem; color: var(--text-muted); margin: 0; line-height: 1.6; }
+        
+        .faq-accordion-wrapper { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem; }
+        .faq-item-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; transition: all 0.2s ease; }
+        .faq-item-card:hover { border-color: var(--brand-green); box-shadow: 0 4px 12px rgba(34, 197, 94, 0.1); }
+        
+        .faq-question-button { width: 100%; padding: 1.25rem 1.5rem; background: transparent; border: none; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 1rem; transition: all 0.2s ease; font-family: inherit; }
+        .faq-question-button:hover { background: var(--bg-main); }
+        .faq-question-button.active { background: rgba(34, 197, 94, 0.08); }
+        .faq-question-text { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
+        
+        .faq-toggle-icon { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--brand-green); transition: transform 0.3s ease; flex-shrink: 0; }
+        .faq-question-button.active .faq-toggle-icon { transform: rotate(180deg); }
+        
+        .faq-answer-content { padding: 0 1.5rem 1.25rem 1.5rem; background: var(--bg-main); animation: slideDown 0.2s ease; }
+        @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 500px; } }
+        .faq-answer-content p { margin: 0; font-size: 1rem; color: var(--text-muted); line-height: 1.7; }
+        
+        .faq-cta-footer { text-align: center; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }
+        .faq-cta-footer p { margin: 0 0 0.75rem 0; font-size: 1rem; color: var(--text-muted); }
+        .faq-contact-link { display: inline-block; color: var(--brand-green); font-weight: 700; text-decoration: none; transition: all 0.2s ease; }
+        .faq-contact-link:hover { gap: 0.5rem; }
+        
+        @media (max-width: 768px) {
+          .faq-main-section { padding: 4rem 1.5rem; }
+          .faq-header-block h2 { font-size: 1.8rem; }
+          .faq-header-block p { font-size: 1rem; }
+          .faq-question-button { padding: 1rem 1.25rem; }
+          .faq-question-text { font-size: 1rem; }
+          .faq-answer-content { padding: 0 1.25rem 1rem 1.25rem; }
+        }
+        
+        @media (max-width: 480px) {
+          .faq-main-section { padding: 3rem 1rem; }
+          .faq-header-block { margin-bottom: 2rem; }
+          .faq-header-block h2 { font-size: 1.5rem; }
+          .faq-header-block p { font-size: 0.95rem; }
+          .faq-item-card { border-radius: 10px; }
+          .faq-question-button { padding: 0.9rem 1rem; }
+          .faq-question-text { font-size: 0.95rem; }
+          .faq-answer-content { padding: 0 1rem 0.9rem 1rem; }
+          .faq-answer-content p { font-size: 0.9rem; }
+        }
+
+        .youtube-video-feature-section { width: 100% !important; background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 24px; padding: 3rem 4rem; box-sizing: border-box; margin: 2rem 0; }
+        .video-feature-grid { display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 2rem; align-items: center; }
+        .video-feature-copy h2 { margin: 0 0 1rem 0; font-size: 2.4rem; line-height: 1.1; color: var(--text-primary); }
+        .video-feature-copy p { margin: 0; color: var(--text-muted); font-size: 1.05rem; line-height: 1.75; }
+        .video-embed-wrap { width: 100%; min-height: 340px; border-radius: 18px; overflow: hidden; background-color: #000; box-shadow: var(--shadow-sm); }
+        .video-embed-wrap iframe { width: 100%; height: 100%; min-height: 340px; border: none; }
+        @media (max-width: 768px) { .video-feature-grid { grid-template-columns: 1fr; } }
+
+        /* Specialty Grid Dashboard Links Layout Section */
+        .interactive-tabs-section { padding: 7rem 4rem; width: 100% !important; box-sizing: border-box; }
+        .program-highlights-section {
+          width: 100% !important;
+          background: linear-gradient(180deg, rgba(35, 134, 54, 0.03), rgba(35, 134, 54, 0.08));
+          border-bottom: 1px solid var(--border-color);
+          padding: 5rem 4rem 6rem;
+          box-sizing: border-box;
+        }
+        .section-intro-shell { max-width: 1100px; margin: 0 auto 2.5rem; text-align: center; }
+        .rotating-intro-shell { position: relative; }
+        .rotating-intro-copy {
+          animation: introRotateIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+          transform-style: preserve-3d;
+        }
+        @keyframes introRotateIn {
+          0% { opacity: 0; transform: rotateX(-20deg) translateY(8px); }
+          100% { opacity: 1; transform: rotateX(0deg) translateY(0); }
+        }
+        .section-intro-shell h2 {
+          margin: 0.75rem auto 0.75rem;
+          max-width: 860px;
+          font-size: 2.4rem;
+          line-height: 1.15;
+          color: var(--text-primary);
+          letter-spacing: -0.6px;
+        }
+        .section-intro-shell p {
+          max-width: 760px;
+          margin: 0 auto;
+          color: var(--text-muted);
+          font-size: 1.08rem;
+          line-height: 1.7;
+        }
+        .highlight-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 1.25rem;
+          max-width: 1120px;
+          margin: 0 auto;
+        }
+        .highlight-card {
+          background: linear-gradient(180deg, var(--bg-card), rgba(35, 134, 54, 0.03));
+          border: 1px solid var(--border-color);
+          border-radius: 18px;
+          padding: 1.4rem;
+          box-shadow: var(--shadow-sm);
+          transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .highlight-card:hover { transform: translateY(-4px); border-color: var(--brand-green); }
+        .highlight-icon-wrap {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          display: grid;
+          place-items: center;
+          margin-bottom: 1rem;
+          background: rgba(35, 134, 54, 0.12);
+          color: var(--brand-green);
+          font-size: 1.2rem;
+        }
+        .highlight-card h3 {
+          margin: 0 0 0.5rem;
+          font-size: 1.15rem;
+          color: var(--text-primary);
+        }
+        .highlight-card p {
+          margin: 0;
+          color: var(--text-muted);
+          line-height: 1.6;
+          font-size: 0.98rem;
+        }
+        .section-label,
+        .faq-section-label,
+        .contact-section-label { text-align: center; display: inline-block; margin: 0 auto 0.85rem; }
+        .section-title-heading { text-align: center; font-size: 2.8rem; color: var(--text-primary); margin-bottom: 0.5rem; font-weight: 800; letter-spacing: -0.5px; }
+        .section-subtext { text-align: center; color: var(--text-muted); margin-bottom: 4rem; font-size: 1.2rem; }
+        
+        .services-routing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; }
+        @media (max-width: 992px) { .services-routing-grid { grid-template-columns: 1fr; } }
+        
+        .service-gateway-card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 2rem; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm); transition: transform 0.2s, border-color 0.2s; text-decoration: none; color: inherit; }
+        .service-gateway-card:hover { transform: translateY(-5px); border-color: var(--brand-green); }
+        .gateway-icon-wrap { width: 46px; height: 46px; border-radius: 10px; background-color: rgba(35,134,54,0.12); color: var(--brand-green); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; margin-bottom: 1.25rem; }
+        .service-gateway-card h3 { font-size: 1.3rem; font-weight: 800; color: var(--text-primary); margin: 0 0 0.6rem 0; }
+        .service-gateway-card p { font-size: 0.92rem; line-height: 1.6; color: var(--text-muted); margin: 0 0 1.5rem 0; flex-grow: 1; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+        .gateway-footer-action { font-size: 0.9rem; font-weight: 700; color: var(--brand-green); display: flex; align-items: center; gap: 0.5rem; }
+
+        .care-counseling-section { width: 100% !important; padding: 0 4rem 2rem 4rem; box-sizing: border-box; }
+        .care-counseling-shell {
+          width: 100%;
+          max-width: none;
+          margin: 0;
+          background: transparent;
+          border: none;
+          border-radius: 0;
+          padding: 0 0 2rem 0;
+          box-shadow: none;
+        }
+        .care-intro-block {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          padding-bottom: 1rem;
+          border-bottom: 1px solid rgba(153, 231, 206, 0.10);
+          margin-bottom: 1rem;
+        }
+        .care-section-block { margin-top: 1rem; }
+        .care-slider-panel { display: block; }
+        .care-process-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+        .care-promise-panel { margin-top: 1rem; }
+        .care-animated-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+        .care-animated-box {
+          position: relative;
+          overflow: hidden;
+          border-radius: 18px;
+          padding: 1rem;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          box-shadow: none;
+          transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+        .care-animated-box::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, rgba(153, 231, 206, 0.08), transparent 35%);
+          opacity: 0;
+          transition: opacity 0.25s ease;
+          pointer-events: none;
+        }
+        .care-animated-box:hover { transform: translateY(-2px); border-color: var(--border-color); box-shadow: var(--shadow-sm); }
+        .care-animated-box:hover::after { opacity: 1; }
+        .care-animated-box h3 { font-size: 1.02rem; margin: 0 0 0.35rem 0; color: var(--text-primary); }
+        .care-animated-box p { color: var(--text-muted); line-height: 1.6; font-size: 0.95rem; margin: 0; }
+        .care-animated-box .care-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          border-radius: 999px;
+          padding: 0.35rem 0.65rem;
+          background: rgba(35, 134, 54, 0.12);
+          color: var(--brand-green);
+          font-size: 0.8rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 0.6rem;
+          border: 1px solid rgba(35, 134, 54, 0.18);
+        }
+        @media (max-width: 992px) { .care-animated-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 640px) { .care-animated-grid { grid-template-columns: 1fr; } }
+        .care-counseling-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 1.25rem; margin-top: 1.25rem; }
+        .care-counseling-card {
+          border: 1px solid var(--border-color);
+          border-radius: 18px;
+          padding: 1.25rem;
+          background: var(--bg-card);
+          box-shadow: none;
+          transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .care-counseling-card:hover { transform: translateY(-1px); border-color: var(--border-color); box-shadow: var(--shadow-sm); }
+        .care-counseling-card h3 { font-size: 1.15rem; margin: 0 0 0.75rem 0; color: var(--text-primary); }
+        .care-counseling-card p { color: var(--text-muted); line-height: 1.65; font-size: 0.98rem; margin: 0 0 0.85rem 0; }
+        .care-counseling-card ul { margin: 0; padding-left: 1rem; color: var(--text-muted); line-height: 1.6; }
+        .why-it-matters-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; margin-top: 0.75rem; }
+        .why-it-matters-card {
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          padding: 1rem;
+          background: var(--bg-card);
+          box-shadow: var(--shadow-sm);
+          transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .why-it-matters-card:hover { transform: translateY(-3px); border-color: rgba(35, 134, 54, 0.28); box-shadow: 0 22px 35px rgba(15, 23, 42, 0.12); }
+        .why-it-matters-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 2rem;
+          height: 2rem;
+          border-radius: 999px;
+          background: rgba(35, 134, 54, 0.12);
+          color: var(--brand-green);
+          font-size: 0.78rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          margin-bottom: 0.55rem;
+        }
+        .why-it-matters-card h4 { margin: 0 0 0.35rem 0; font-size: 0.98rem; color: var(--text-primary); }
+        .why-it-matters-card p { margin: 0; color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; }
+        @media (max-width: 992px) { .why-it-matters-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 640px) { .why-it-matters-grid { grid-template-columns: 1fr; } }
+        .care-focus-surface {
+          background: var(--bg-main);
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+          box-shadow: none;
+        }
+        .care-focus-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+        .care-focus-copy { flex: 1 1 360px; min-width: 0; }
+        .care-focus-copy h3 { font-size: 1.2rem; line-height: 1.35; margin: 0.2rem 0 0.45rem 0; }
+        .care-focus-copy p { color: var(--text-muted); }
+        .care-focus-helper { font-size: 0.88rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.16em; font-weight: 700; }
+        .care-focus-actions { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+        .care-focus-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 2.2rem;
+          height: 2.2rem;
+          border-radius: 999px;
+          border: 1px solid var(--border-color);
+          background: var(--bg-main);
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+        }
+        .care-focus-btn:hover { transform: translateY(-1px); border-color: rgba(35, 134, 54, 0.24); background: var(--bg-card); }
+        .care-focus-dot { width: 10px; height: 10px; border-radius: 999px; border: none; background: var(--border-color); cursor: pointer; padding: 0; }
+        .care-focus-dot.active { background: var(--brand-green); width: 28px; border-radius: 999px; box-shadow: 0 0 0 4px rgba(35, 134, 54, 0.12); }
+        .care-counseling-card li + li { margin-top: 0.35rem; }
+        .care-focus-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          box-shadow: var(--shadow-sm);
+          color: var(--text-primary);
+        }
+        .care-focus-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+        .care-focus-copy { flex: 1 1 320px; min-width: 0; }
+        .care-focus-copy h3 { font-size: 1.18rem; line-height: 1.35; margin: 0.45rem 0 0.35rem; color: var(--text-primary); }
+        .care-focus-copy p { color: var(--text-muted); }
+        .care-focus-controls { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .care-focus-helper { color: var(--text-muted); font-size: 0.88rem; margin-top: 0.45rem; opacity: 1; }
+        .care-chip-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+        .care-chip-list span { display: inline-flex; align-items: center; padding: 0.45rem 0.75rem; border-radius: 999px; background: rgba(35,134,54,0.12); color: var(--text-primary); border: 1px solid rgba(35,134,54,0.18); font-size: 0.9rem; font-weight: 600; }
+        .care-services-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
+        .care-mini-card { border: 1px solid var(--border-color); border-radius: 16px; padding: 0.95rem; background-color: var(--bg-card); color: var(--text-primary); font-weight: 700; font-size: 0.95rem; box-shadow: none; }
+        .care-mini-card small { display: block; color: var(--text-muted); font-weight: 500; margin-top: 0.35rem; }
+        @media (max-width: 992px) { .care-counseling-grid { grid-template-columns: 1fr; } .care-services-strip { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) {
+          .care-counseling-section { padding: 0 1rem 1rem 1rem; }
+          .care-counseling-shell { padding: 1rem; border-radius: 18px; }
+          .care-focus-header { flex-direction: column; align-items: stretch; }
+          .care-focus-controls { justify-content: flex-start; }
+          .service-banner-btn { padding: 0.45rem 0.6rem; }
+          .service-banner-dot { width: 9px; height: 9px; }
+          .service-banner-dot.active { width: 24px; }
+        }
+        @media (max-width: 640px) { .care-services-strip { grid-template-columns: 1fr; } .care-counseling-card { padding: 1rem; } .care-focus-copy h3 { font-size: 1.02rem; } .care-focus-helper { font-size: 0.82rem; } }
+
+        .parent-notice-section { width: 100% !important; background-color: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 5rem 4rem; box-sizing: border-box; }
+        .parent-notice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.75rem; }
+        .notice-card { position: relative; overflow: hidden; background: linear-gradient(180deg, rgba(35,134,54,0.08), rgba(13,17,23,0.04)); border: 1px solid rgba(35,134,54,0.15); border-radius: 20px; padding: 2rem; min-height: 240px; display: flex; flex-direction: column; gap: 1rem; transition: transform 0.25s ease, box-shadow 0.25s ease; }
+        .notice-card:hover { transform: translateY(-4px); box-shadow: 0 20px 45px rgba(0,0,0,0.12); }
+        .notice-icon-shell { width: 60px; height: 60px; border-radius: 18px; display: grid; place-items: center; background-color: rgba(35,134,54,0.16); color: var(--brand-green); font-size: 1.4rem; box-shadow: inset 0 0 0 1px rgba(35,134,54,0.1); }
+        .notice-card h3 { margin: 0; font-size: 1.4rem; color: var(--text-primary); line-height: 1.3; }
+        .notice-card p { margin: 0; color: var(--text-muted); line-height: 1.75; font-size: 1rem; }
+        .notice-card::after { content: ''; position: absolute; width: 70px; height: 70px; border-radius: 50%; background: rgba(35,134,54,0.08); top: -20px; right: -20px; pointer-events: none; }
+        @media (max-width: 992px) { .parent-notice-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 768px) { .parent-notice-grid { grid-template-columns: 1fr; } .parent-notice-section { padding: 3rem 1.5rem; } }
+
+        /* Contact Us Section Styles */
+        .contact-us-section { width: 100% !important; background-color: var(--bg-main); padding: 6rem 4rem; box-sizing: border-box; }
+        .contact-container-wrapper { max-width: 1200px; margin: 0 auto; }
+        .contact-header-block { text-align: center; margin-bottom: 3rem; }
+        .contact-section-label { display: inline-block; font-size: 0.85rem; font-weight: 700; color: var(--brand-green); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.75rem; }
+        .contact-header-block h2 { font-size: 2.6rem; font-weight: 800; color: var(--text-primary); margin: 0.5rem 0 1rem 0; }
+        .contact-header-block p { font-size: 1.1rem; color: var(--text-muted); margin: 0; line-height: 1.6; max-width: 600px; margin: 0 auto; }
+        
+        .contact-content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: start; }
+        .contact-info-cards { display: flex; flex-direction: column; gap: 1.5rem; }
+        .contact-info-item { display: flex; gap: 1.5rem; align-items: flex-start; }
+        .contact-icon-box { width: 60px; height: 60px; background: rgba(34, 197, 94, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--brand-green); font-size: 1.5rem; flex-shrink: 0; }
+        .contact-info-details h4 { margin: 0 0 0.5rem 0; font-size: 1.1rem; color: var(--text-primary); }
+        .contact-info-details p { margin: 0; font-size: 1rem; color: var(--text-muted); }
+        
+        .contact-form-wrapper { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+        .contact-form-wrapper .form-input-container { display: flex; flex-direction: column; gap: 0.5rem; }
+        .contact-form-wrapper label { font-weight: 600; color: var(--text-primary); font-size: 0.95rem; }
+        .contact-form-wrapper input, .contact-form-wrapper textarea { background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; font-family: inherit; font-size: 1rem; color: var(--text-primary); transition: border-color 0.2s ease; }
+        .contact-form-wrapper input:focus, .contact-form-wrapper textarea:focus { outline: none; border-color: var(--brand-green); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1); }
+        .contact-submit-btn { background: var(--brand-green); color: white; padding: 0.85rem 2rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; transition: all 0.2s ease; align-self: flex-start; margin-top: 0.5rem; }
+        .contact-submit-btn:hover { background: #047857; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+        
+        @media (max-width: 768px) {
+          .contact-us-section { padding: 4rem 1.5rem; }
+          .contact-header-block h2 { font-size: 1.8rem; }
+          .contact-header-block p { font-size: 1rem; }
+          .contact-content-grid { grid-template-columns: 1fr; gap: 2.5rem; }
+          .contact-form-wrapper { padding: 1.5rem; }
+        }
+        
+        @media (max-width: 480px) {
+          .contact-us-section { padding: 3rem 1rem; }
+          .contact-header-block h2 { font-size: 1.5rem; }
+          .contact-header-block p { font-size: 0.95rem; }
+          .contact-info-item { gap: 1rem; }
+          .contact-icon-box { width: 50px; height: 50px; font-size: 1.25rem; }
+          .contact-info-details h4 { font-size: 1rem; }
+          .contact-info-details p { font-size: 0.9rem; }
+          .contact-form-wrapper { padding: 1rem; gap: 1rem; }
+          .contact-submit-btn { padding: 0.75rem 1.5rem; font-size: 0.9rem; }
+        }
+
+        /* Multi-Column Workspace Footer Layer */
+        .workspace-fluid-footer { width: 100% !important; background-color: var(--bg-card); border-top: 1px solid var(--border-color); padding: 5rem 4rem 2.5rem 4rem; box-sizing: border-box; margin-top: 6rem; }
+        .footer-columns-container { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 4rem; width: 100%; padding-bottom: 3.5rem; border-bottom: 1px solid var(--border-color); }
+        .footer-brand-column { display: flex; flex-direction: column; gap: 1.2rem; }
+        .footer-brand-logo-row { display: flex; align-items: center; gap: 0.75rem; text-decoration: none; }
+        .footer-vector-badge { width: 50px; height: 50px; font-weight: 800; display: flex; align-items: center; justify-content: center; border-radius: 6px; overflow: hidden; }
+        .footer-vector-badge img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        .footer-brand-headline { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
+        .footer-brand-column p { color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin: 0; }
+        .footer-social-links { display: flex; gap: 1rem; margin-top: 1rem; }
+        .footer-social-icon {
+          width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+          text-decoration: none; font-size: 1.2rem; transition: all 0.2s ease; background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04);
+        }
+        .footer-social-icon[aria-label="Facebook"] { color: #1877F2; }
+        .footer-social-icon[aria-label="Facebook"]:hover { background: #1877F2; color: white; }
+        .footer-social-icon[aria-label="Instagram"] { color: #E4405F; }
+        .footer-social-icon[aria-label="Instagram"]:hover { background: #E4405F; color: white; }
+        .footer-social-icon[aria-label="Twitter"] { color: #1DA1F2; }
+        .footer-social-icon[aria-label="Twitter"]:hover { background: #1DA1F2; color: white; }
+        .footer-social-icon[aria-label="YouTube"] { color: #FF0000; }
+        .footer-social-icon[aria-label="YouTube"]:hover { background: #FF0000; color: white; }
+        .footer-social-icon[aria-label="LinkedIn"] { color: #0A66C2; }
+        .footer-social-icon[aria-label="LinkedIn"]:hover { background: #0A66C2; color: white; }
+        .footer-social-icon:hover { transform: translateY(-2px); }
+        .footer-links-column { display: flex; flex-direction: column; gap: 1.2rem; }
+        .footer-links-column h4 { font-size: 0.9rem; font-weight: 700; color: var(--text-primary); margin: 0; text-transform: uppercase; }
+        .footer-interactive-links { display: flex; flex-direction: column; gap: 0.75rem; }
+        .footer-nav-anchor { color: var(--text-muted); text-decoration: none; font-size: 0.95rem; font-weight: 500; background: none; border: none; text-align: left; padding: 0; cursor: pointer; font-family: inherit; }
+        .footer-nav-anchor:hover { color: var(--text-primary); }
+        .footer-bottom-copyright-strip { display: flex; justify-content: space-between; align-items: center; padding-top: 2rem; width: 100%; }
+        .footer-bottom-copyright-strip p { font-size: 0.9rem; color: var(--text-muted); margin: 0; }
+        .footer-regulatory-tags { display: flex; gap: 1.5rem; }
+
+        .legal-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 30000;
+          display: grid;
+          place-items: center;
+          padding: 1rem;
+          background: rgba(9, 25, 17, 0.66);
+          backdrop-filter: blur(3px);
+        }
+        .legal-modal-panel {
+          display: flex;
+          flex-direction: column;
+          width: min(760px, 100%);
+          max-height: min(88svh, 900px);
+          overflow: hidden;
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          background: #ffffff;
+          color: #25352d;
+          box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+        }
+        .legal-modal-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 1.5rem 1.6rem 1.2rem;
+          border-bottom: 1px solid #d9e8df;
+          background: #ffffff;
+        }
+        .legal-modal-eyebrow {
+          color: #008751;
+          font-size: 0.72rem;
+          font-weight: 800;
+          text-transform: uppercase;
+        }
+        .legal-modal-header h2 {
+          margin: 0.35rem 0;
+          color: #174a30;
+          font-size: 1.65rem;
+          line-height: 1.2;
+        }
+        .legal-modal-header p {
+          max-width: 62ch;
+          margin: 0;
+          color: #52665a;
+          font-size: 0.93rem;
+          line-height: 1.55;
+        }
+        .legal-modal-dismiss {
+          flex: 0 0 40px;
+          width: 40px;
+          height: 40px;
+          display: grid;
+          place-items: center;
+          border: 1px solid #b9dfc9;
+          border-radius: 50%;
+          background: #008751;
+          color: #ffffff;
+          cursor: pointer;
+        }
+        .legal-modal-body {
+          min-height: 0;
+          overflow-y: auto;
+          padding: 0.25rem 1.6rem;
+          overscroll-behavior: contain;
+        }
+        .legal-modal-section {
+          padding: 1rem 0;
+          border-bottom: 1px solid #e4eee8;
+        }
+        .legal-modal-section:last-child { border-bottom: 0; }
+        .legal-modal-section h3 {
+          margin: 0 0 0.45rem;
+          color: #174a30;
+          font-size: 1rem;
+        }
+        .legal-modal-section p {
+          margin: 0 0 0.55rem;
+          color: #42554a;
+          font-size: 0.9rem;
+          line-height: 1.65;
+        }
+        .legal-modal-section p:last-child { margin-bottom: 0; }
+        .legal-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 0.9rem 1.6rem;
+          border-top: 1px solid #d9e8df;
+          background: #f7fbf8;
+          color: #52665a;
+          font-size: 0.82rem;
+        }
+        .legal-modal-footer button {
+          padding: 0.6rem 1rem;
+          border: 1px solid #006b40;
+          border-radius: 5px;
+          background: #008751;
+          color: #ffffff;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        @media (max-width: 600px) {
+          .legal-modal-overlay { padding: 0.5rem; }
+          .legal-modal-panel { max-height: 90svh; }
+          .legal-modal-header { padding: 1rem 1rem 0.85rem; }
+          .legal-modal-header h2 { font-size: 1.35rem; }
+          .legal-modal-header p { font-size: 0.86rem; }
+          .legal-modal-body { padding: 0 1rem; }
+          .legal-modal-section { padding: 0.85rem 0; }
+          .legal-modal-section p { font-size: 0.86rem; }
+          .legal-modal-footer { align-items: flex-start; padding: 0.8rem 1rem; }
+        }
+
+        /* Secure Dashboard Context Panels */
+        .portal-workspace-grid { display: grid; grid-template-columns: 300px 1fr; height: 100vh; background-color: var(--bg-main); width: 100% !important; }
+        .portal-sidebar-panel { background-color: var(--bg-card); border-right: 1px solid var(--border-color); padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; overflow-y: auto; }
+        .portal-sidebar-title { font-size: 1.25rem; color: var(--text-primary); font-weight: 700; margin-bottom: 1.25rem; border-left: 3px solid var(--brand-green); padding-left: 0.75rem; }
+        .portal-sidebar-links { display: flex; flex-direction: column; gap: 0.5rem; flex-grow: 1; }
+        .sidebar-link-item { color: var(--text-muted); text-decoration: none; padding: 0.85rem 1rem; border-radius: 10px; font-size: 0.95rem; font-weight: 600; transition: all 0.2s ease; }
+        .sidebar-link-item:hover { background-color: rgba(46,164,79,0.12); color: var(--text-primary); }
+        .sidebar-link-item.active { background-color: var(--brand-green); color: #ffffff; font-weight: 700; }
+        .sidebar-disconnect-btn { background-color: #f85149; border: none; color: #fff; padding: 0.85rem 1rem; border-radius: 12px; cursor: pointer; font-weight: 700; transition: background-color 0.2s ease, transform 0.2s ease; }
+        .sidebar-disconnect-btn:hover { background-color: #dc3545; transform: translateY(-1px); }
+        .portal-main-workspace { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; }
+        .portal-workspace-header { background-color: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 1.25rem 3rem; display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; box-sizing: border-box; flex-shrink: 0; }
+        .dashboard-logout-btn { background: transparent; border: 1px solid var(--brand-green); color: var(--brand-green); padding: 0.65rem 1.1rem; border-radius: 8px; cursor: pointer; font-weight: 700; transition: all 0.2s ease; font-size: 0.9rem; }
+        .dashboard-logout-btn:hover { background: var(--brand-green); color: #ffffff; transform: translateY(-1px); }
+        .portal-workspace-header-shell { display: flex; flex-direction: column; flex-shrink: 0; }
+        .dashboard-tab-navigation { position: static; top: auto; z-index: auto; background: transparent; }
+        .dashboard-tab-buttons { display: flex; flex-wrap: wrap; gap: 0.75rem; padding: 1rem 3rem; margin-bottom: 0; position: static; top: auto; z-index: auto; background: transparent; border: none; width: 100%; box-sizing: border-box; overflow-x: auto; }
+        .dashboard-tab-button { padding: 0.75rem 1.2rem; border-radius: 8px; border: 1px solid var(--border-color); background: transparent; color: var(--text-muted); font-weight: 600; cursor: pointer; transition: all 0.2s ease; white-space: nowrap; font-size: 0.95rem; }
+        .dashboard-tab-button:hover { background: rgba(35,134,54,0.08); color: var(--text-primary); border-color: var(--brand-green); }
+        .dashboard-tab-button.active { background: var(--brand-green); border-color: var(--brand-green); color: #ffffff; box-shadow: 0 2px 8px rgba(46,164,79,0.3); }
+        .dashboard-tab-button.active:hover { background: #36b560; border-color: #36b560; }
+        .portal-workspace-body-content { padding: 2rem 3rem; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 2rem; flex: 1; overflow-y: auto; }
+        .dashboard-editor-card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 2.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04); width: 100%; box-sizing: border-box; transition: all 0.2s ease; }
+        .dashboard-editor-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .cms-creation-form-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+        .form-input-container { display: flex; flex-direction: column; gap: 0.6rem; }
+        .form-input-container label { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+        .plain-text-input { background-color: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.95rem 1.15rem; line-height: 1.5; border-radius: 10px; font-size: 0.95rem; width: 100%; box-sizing: border-box; min-height: 44px; transition: all 0.2s ease; }
+        .plain-text-input:hover { border-color: rgba(46,164,79,0.5); }
+        .plain-text-input:focus { outline: none; border-color: var(--brand-green); box-shadow: 0 0 0 3px rgba(46,164,79,0.1); }
+        .form-submit-action-btn { background-color: var(--brand-green); color: white; padding: 0.85rem 1.8rem; border-radius: 8px; border: none; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s ease; }
+        .form-submit-action-btn:hover { background-color: #36b560; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(46,164,79,0.3); }
+        .form-cancel-action-btn { background-color: transparent; color: var(--text-primary); padding: 0.85rem 1.8rem; border-radius: 8px; border: 1px solid var(--border-color); font-weight: 700; font-size: 0.95rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s ease; }
+        .form-cancel-action-btn:hover { background-color: rgba(0,0,0,0.05); border-color: var(--text-muted); transform: translateY(-1px); }
+        .status-feedback-banner { padding: 1rem 1.25rem; background-color: rgba(46,164,79,0.08); border: 1px solid rgba(46,164,79,0.3); color: var(--accent-green); border-radius: 10px; font-weight: 600; text-align: center; font-size: 0.95rem; }
+        
+        .auth-page-wrapper {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+          background-color: var(--bg-main);
+          width: 100% !important;
+          padding: 1.5rem;
+          box-sizing: border-box;
+        }
+        .login-page-body {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          width: 100%;
+          min-height: calc(100vh - 5rem);
+          padding: 2.5rem 0 2rem;
+          box-sizing: border-box;
+        }
+        .login-card-layout {
+          display: grid;
+          grid-template-columns: 1.15fr 1fr;
+          gap: 1.5rem;
+          background-color: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 14px;
+          width: min(100%, 1040px);
+          padding: 3rem 2.5rem;
+          box-shadow: var(--shadow-lg);
+        }
+        .login-card-left,
+        .login-card-form {
+          padding: 2rem;
+        }
+        .login-brand-title {
+          text-align: center;
+          color: var(--text-primary);
+          margin-bottom: 2rem;
+          font-size: clamp(1.8rem, 2.1vw, 2.4rem);
+          font-weight: 800;
+        }
+        .standard-login-form {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+        
+        .system-loading-splash { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background-color: #0d1117; }
+        .loading-spinner-element { width: 44px; height: 44px; border: 4px solid #30363d; border-top-color: #2ea44f; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 1.25rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        @media(max-width: 1400px) {
+          .nav-menu-toggle { display: block; }
+          .nav-navigation-links { display: none; }
+          .nav-navigation-links.mobile-open { display: flex; }
+          .public-navbar { padding: 1rem 1.5rem; }
+        }
+
+        @media(max-width: 992px) {
+          .nav-menu-toggle { display: block; }
+          .nav-navigation-links { display: none; }
+          .nav-navigation-links.mobile-open { display: flex; }
+          .public-navbar { padding: 1rem 1.5rem; }
+          .synchronized-promo-banner { grid-template-columns: 1fr; padding: 3rem 1.5rem; gap: 2.5rem; }
+          .teachable-moments-section { padding: 3rem 1.5rem; }
+          .founder-executive-suite { grid-template-columns: 1fr; padding: 4rem 1.5rem; gap: 3rem; }
+          .founder-video-feature { padding: 1.25rem; }
+          .founder-video-heading { align-items: flex-start; flex-direction: column; }
+          .founder-video-heading h2 { font-size: 1.55rem; }
+          .founder-video-embed-wrap, .founder-video-embed-wrap iframe { min-height: 220px; }
+          .founder-portrait-frame { height: 400px; }
+          .marquee-statements-section { padding: 4rem 1.5rem; }
+          .social-news-stream-section { padding: 4rem 1.5rem; }
+          .social-news-header-zone { flex-direction: column; align-items: flex-start; }
+          .social-news-broadcast-anchor-card { padding: 2rem 1.5rem; }
+          .broadcast-content-body h3 { font-size: 1.5rem; }
+          .broadcast-content-body p { font-size: 1.05rem; }
+          .sliding-statement-card h3 { font-size: 1.8rem; }
+          .sliding-statement-card p { font-size: 1.1rem; }
+          .banner-text-package h2 { font-size: 2.2rem; }
+          .core-values-matrix { grid-template-columns: 1fr; }
+          .footer-columns-container { grid-template-columns: 1fr; gap: 2.5rem; }
+          .footer-bottom-copyright-strip { flex-direction: column; gap: 1.5rem; text-align: center; }
+          .footer-social-links { justify-content: center; }
+          .portal-workspace-grid { grid-template-columns: 1fr; height: auto; }
+          .portal-sidebar-panel { display: none; }
+          .portal-main-workspace { height: 100vh; overflow: hidden; }
+          .portal-workspace-body-content { padding: 1.5rem; }
+          .portal-workspace-header { padding: 1rem 1.5rem; }
+          .dashboard-tab-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem; padding: 0.45rem 0.65rem; overflow: visible; flex-wrap: nowrap; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; border-radius: 12px; width: 100%; }
+          .dashboard-tab-buttons::-webkit-scrollbar { display: none; }
+          .dashboard-tab-button { padding: 0.55rem 0.45rem; font-size: 0.72rem; line-height: 1.2; border-radius: 999px; min-height: 32px; width: 100%; min-width: 0; text-align: center; }
+          .dashboard-tab-badge { min-width: 18px; height: 18px; font-size: 0.62rem; }
+          .dashboard-editor-card { padding: 1.5rem; border-radius: 12px; }
+          .cms-creation-form-layout { grid-template-columns: 1fr; }
+          .dashboard-table th,
+          .dashboard-table td { padding: 0.75rem 0.6rem; font-size: 0.85rem; }
+          .public-navbar { padding: 1rem 1.5rem; }
+          .hero-section { height: auto; min-height: 72vh; }
+          .hero-overlay { padding: 2.2rem 1rem; }
+          .hero-copy-card h1, .hero-overlay h1 { font-size: clamp(1.9rem, 8vw, 2.7rem) !important; line-height: 1.08; }
+          .hero-copy-card p, .hero-overlay p { font-size: 0.98rem !important; line-height: 1.45; }
+          .hero-scroll-btn { width: 100%; justify-content: center; }
+          .banner-slide { gap: 1.25rem; padding: 1.5rem; }
+          .slide-graphic { max-height: 320px; }
+          .interactive-tabs-section { padding: 4rem 1.5rem; }
+          .program-highlights-section { padding: 3.5rem 1.25rem 4rem; }
+          .section-intro-shell h2 { font-size: 1.9rem; }
+          .section-intro-shell p { font-size: 0.98rem; }
+          .highlight-grid { grid-template-columns: 1fr; }
+          .intake-form-wrapper { padding: 2.5rem 1.5rem; }
+        }
+        @media (max-width: 640px) {
+          .teachable-moments-section { padding: 2.5rem 0.75rem; }
+          .teachable-moments-section .founder-video-feature { padding: 1rem; border-radius: 12px; }
+          .teachable-moments-section .founder-video-heading { gap: 1rem; margin-bottom: 1rem; }
+          .teachable-moments-section .founder-video-eyebrow { font-size: 0.7rem; letter-spacing: 0.06em; }
+          .teachable-moments-section .founder-video-heading h2 { font-size: 1.35rem; line-height: 1.2; margin: 0.35rem 0 0.5rem; }
+          .teachable-moments-section .founder-video-heading p { font-size: 0.92rem; line-height: 1.55; }
+          .teachable-moments-section .founder-video-controls { align-self: stretch; justify-content: space-between; gap: 0.65rem; }
+          .teachable-moments-section .founder-video-controls button { width: 2.1rem; height: 2.1rem; }
+          .teachable-moments-section .founder-video-embed-wrap { aspect-ratio: 16 / 9; min-height: 0; border-radius: 10px; }
+          .teachable-moments-section .founder-video-embed-wrap iframe, .teachable-moments-section .founder-video-empty-state { min-height: 0; }
+          .portal-workspace-body-content { padding: 1rem; }
+          .dashboard-tab-buttons { padding: 0.4rem 0.6rem; gap: 0.3rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .dashboard-tab-button { padding: 0.45rem 0.45rem; font-size: 0.7rem; min-height: 30px; width: 100%; min-width: 0; text-align: center; }
+          .dashboard-editor-card { padding: 1.25rem; }
+          .dashboard-table th,
+          .dashboard-table td { padding: 0.6rem 0.5rem; font-size: 0.8rem; }
+          .form-submit-action-btn { padding: 0.75rem 1.4rem; font-size: 0.85rem; }
+          .portal-workspace-header { flex-direction: column; padding: 0.75rem 1rem; }
+        }
+
+        @media (max-width: 1024px) {
+          .public-navbar { padding: 1rem 2rem; }
+          .hero-overlay { padding: 4.5rem 1.5rem 2rem; }
+          .hero-copy-card h1 { font-size: clamp(2.2rem, 4.5vw, 3.2rem); }
+          .hero-copy-card p { font-size: clamp(1rem, 2.2vw, 1.2rem); }
+          .interactive-tabs-section { padding: 5rem 2rem; }
+          .service-gateway-card { padding: 2rem; }
+          .video-feature-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+          .workspace-fluid-footer { padding: 4rem 2rem 2rem; }
+          .footer-columns-container { gap: 2rem; }
+          .login-card-layout { width: min(100%, 720px); }
+        }
+
+        @media (max-width: 768px) {
+          .full-view-app-root-override { padding-top: 64px; }
+          .public-navbar { padding: 0.85rem 1rem; }
+          .nav-logo-img { width: 42px; height: 42px; }
+          .nav-brand-name { font-size: 0.95rem; }
+          .nav-navigation-links.mobile-open { top: 64px; height: calc(100vh - 64px); padding: 1rem 1rem 1.75rem; }
+          .hero-overlay { padding: 3.5rem 1rem 1.5rem; }
+          .hero-action-row { flex-direction: column; }
+          .hero-scroll-btn { width: 100%; justify-content: center; }
+          .hero-nav-btn { width: 40px; height: 40px; }
+          .synchronized-promo-banner { padding: 2.5rem 1rem; gap: 1.5rem; }
+          .banner-slide { flex-direction: column; padding: 1.25rem; gap: 1rem; }
+          .slide-graphic { width: 100%; min-height: 240px; max-height: 260px; }
+          .interactive-tabs-section { padding: 3.5rem 1rem; }
+          .services-routing-grid { gap: 1rem; }
+          .service-gateway-card { padding: 1.5rem; }
+          .service-gateway-card h3 { font-size: 1.3rem; }
+          .service-gateway-card p { font-size: 0.98rem; }
+          .video-feature-copy h2 { font-size: 1.7rem; line-height: 1.2; }
+          .social-news-header-zone { gap: 1rem; }
+          .platform-badge-nav { width: 100%; justify-content: center; }
+          .social-news-broadcast-anchor-card { padding: 1.35rem; }
+          .workspace-fluid-footer { padding: 3rem 1rem 1.5rem; margin-top: 3rem; }
+          .workspace-fluid-footer,
+          .footer-columns-container,
+          .footer-brand-column,
+          .footer-links-column,
+          .footer-interactive-links { align-items: center; text-align: center; }
+          .footer-columns-container { justify-items: center; }
+          .footer-brand-logo-row { justify-content: center; }
+          .footer-social-links { justify-content: center; }
+          .footer-interactive-links { width: 100%; }
+          .footer-nav-anchor { text-align: center; }
+          .footer-bottom-copyright-strip { align-items: center; text-align: center; }
+          .footer-regulatory-tags { flex-wrap: wrap; justify-content: center; gap: 0.8rem; }
+          .portal-workspace-header { flex-direction: column; align-items: flex-start; }
+          .portal-workspace-body-content { padding: 1rem; }
+          .dashboard-editor-card { padding: 1.25rem; }
+          .login-card-layout { width: 100%; padding: 1.8rem 1rem; grid-template-columns: 1fr; }
+          .login-page-body { padding: 1.5rem 0 1rem; }
+          .login-card-left,
+          .login-card-form { padding: 1.25rem; }
+          .login-brand-title { font-size: 1.7rem; }
+          .login-form-title { font-size: 1.4rem; }
+          .standard-login-form { gap: 1rem; }
+          .cms-creation-form-layout { gap: 1rem; }
+          .dashboard-table th,
+          .dashboard-table td { padding: 0.7rem 0.55rem; font-size: 0.8rem; }
+        }
+
+        @media (max-width: 480px) {
+          .public-navbar { min-height: 64px; padding: 0.65rem 0.75rem; gap: 0.45rem; background: rgba(255,255,255,0.96); box-shadow: 0 8px 22px rgba(15,23,42,0.08); }
+          .nav-logo-brand-zone { gap: 0.4rem; margin-right: 0; }
+          .nav-logo-img { width: 36px; height: 36px; }
+          .nav-brand-name { font-size: 0.82rem; max-width: 128px; line-height: 1.2; letter-spacing: 0; color: #17352f; }
+          .nav-right-cluster { gap: 0.3rem; }
+          .nav-shop-link, .nav-cta-link { width: 38px; height: 38px; min-width: 38px; padding: 0; margin-left: 0; display: inline-flex; align-items: center; justify-content: center; gap: 0; border-radius: 11px; font-size: 0; border: 1px solid rgba(22,101,52,0.12); box-shadow: 0 5px 12px rgba(22,101,52,0.1); }
+          .nav-shop-link { background: #f0fdf4; color: #166534; }
+          .nav-shop-link.active { background: linear-gradient(135deg, #166534, #15966a); color: #fff; border-color: transparent; }
+          .nav-cta-link { background: linear-gradient(135deg, #20c878, #13ad69); }
+          .nav-cta-link.secondary { background: #fff; color: #17352f; border-color: #dbe7df; box-shadow: 0 5px 12px rgba(15,23,42,0.06); }
+          .nav-shop-link i, .nav-cta-link i { margin: 0; font-size: 0.92rem; }
+          .nav-cta-group { gap: 0.3rem; margin-left: 0; }
+          .nav-menu-toggle { width: 38px; height: 38px; padding: 0; margin-left: 0; display: inline-grid; place-items: center; border-radius: 11px; background: #f0fdf4; color: #17352f; font-size: 1.2rem; }
+          .hero-copy-card h1 { font-size: clamp(2rem, 8vw, 2.6rem); }
+          .hero-copy-card p { font-size: 0.95rem; }
+          .hero-scroll-btn { min-width: 0; width: 100%; padding: 0.9rem 1.2rem; }
+          .service-gateway-card { padding: 1.25rem; }
+          .service-gateway-card h3 { font-size: 1.2rem; }
+          .banner-text-package p { font-size: 0.95rem; }
+          .banner-controls { gap: 0.4rem; }
+          .platform-badge-nav { font-size: 0.8rem; padding: 0.7rem 0.8rem; }
+          .workspace-fluid-footer { padding: 2.5rem 0.9rem 1.25rem; }
+          .footer-brand-headline { font-size: 1.1rem; }
+          .footer-social-icon { width: 36px; height: 36px; font-size: 1rem; }
+          .contact-info-grid { grid-template-columns: 1fr; }
+          .contact-form-wrapper { grid-template-columns: 1fr; }
+          .contact-form-wrapper input,
+          .contact-form-wrapper textarea { font-size: 16px; }
+          .portal-workspace-header h2 { font-size: 1.1rem; }
+          .dashboard-tab-button { padding: 0.55rem 0.75rem; font-size: 0.75rem; }
+        }
+
+        .home-help-guide {
+          position: fixed;
+          right: 20px;
+          bottom: 20px;
+          z-index: 12000;
+          display: flex;
+          width: min(410px, calc(100vw - 32px));
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 10px;
+          pointer-events: none;
+        }
+        .home-help-guide-booking { bottom: 88px; }
+        .home-help-bubble {
+          position: relative;
+          box-sizing: border-box;
+          width: 100%;
+          padding: 1rem 1.1rem;
+          border: 1px solid #dcebe3;
+          border-radius: 18px;
+          background: #fff;
+          box-shadow: 0 14px 36px rgba(20, 60, 48, 0.18);
+          color: #143c30;
+          pointer-events: auto;
+          animation: home-help-arrive 220ms ease-out both;
+        }
+        .home-help-greeting { padding-right: 2.6rem; }
+        .home-help-greeting p {
+          margin: 0.3rem 0 0;
+          color: #51645e;
+          font-size: 0.9rem;
+          line-height: 1.45;
+        }
+        .home-help-dismiss {
+          position: absolute;
+          top: 0.65rem;
+          right: 0.65rem;
+          z-index: 1;
+          display: grid;
+          width: 30px;
+          height: 30px;
+          place-items: center;
+          border: 1px solid #dce8e1;
+          border-radius: 50%;
+          background: #fff;
+          color: #26483d;
+          font-size: 0.85rem;
+          cursor: pointer;
+        }
+        .home-help-robot {
+          display: block;
+          width: 96px;
+          height: 96px;
+          object-fit: contain;
+          filter: drop-shadow(0 6px 14px rgba(0, 74, 190, 0.22));
+          pointer-events: none;
+          animation: home-help-robot-float 3s ease-in-out infinite, home-help-arrive 300ms ease-out both;
+        }
+        @keyframes home-help-robot-float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-7px); }
+        }
+        @keyframes home-help-arrive {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .home-help-eyebrow {
+          color: #178052;
+          font-size: 0.68rem;
+          font-weight: 900;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+        .home-help-next-step { padding-right: 2.7rem; }
+        .home-help-next-step h2 {
+          margin: 0;
+          color: #143c30;
+          font-size: 1rem;
+          line-height: 1.3;
+        }
+        .home-help-services-heading {
+          margin: 0.65rem 0 0.5rem;
+          color: #25483c;
+          font-size: 0.82rem;
+        }
+        .home-help-services-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 0.4rem;
+          max-height: min(34vh, 250px);
+          overflow-y: auto;
+        }
+        .home-help-service-link {
+          display: grid;
+          grid-template-columns: 32px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 0.55rem;
+          min-width: 0;
+          padding: 0.5rem;
+          border: 1px solid #dfebe4;
+          border-radius: 11px;
+          background: rgba(255, 255, 255, 0.92);
+          color: inherit;
+          text-decoration: none;
+          transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+        }
+        .home-help-service-link:hover,
+        .home-help-service-link:focus-visible {
+          transform: translateX(-2px);
+          border-color: #72c39b;
+          box-shadow: 0 6px 16px rgba(24, 111, 74, 0.12);
+        }
+        .home-help-service-icon {
+          display: grid;
+          width: 32px;
+          height: 32px;
+          place-items: center;
+          border-radius: 9px;
+          background: #e9f8ef;
+          color: #178052;
+          font-size: 0.82rem;
+        }
+        .home-help-service-copy { min-width: 0; }
+        .home-help-service-copy strong {
+          display: block;
+          color: #193e32;
+          font-size: 0.78rem;
+        }
+        .home-help-service-copy small {
+          display: block;
+          margin-top: 0.1rem;
+          color: #61716b;
+          font-size: 0.67rem;
+          line-height: 1.25;
+        }
+        .home-help-service-action {
+          color: #178052;
+          font-size: 0.62rem;
+          font-weight: 800;
+          white-space: nowrap;
+        }
+        @media (max-width: 620px) {
+          .home-help-guide { right: 12px; bottom: 12px; width: min(360px, calc(100vw - 24px)); }
+          .home-help-guide-booking { bottom: 78px; }
+          .home-help-robot { width: 80px; height: 80px; }
+          .home-help-bubble { padding: 0.85rem; border-radius: 16px; }
+          .home-help-greeting { padding-right: 2.5rem; }
+          .home-help-guide .home-help-dismiss-next { top: 0.55rem; right: 0.55rem; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .home-help-robot { animation: none; }
+          .home-help-service-link { transition: none; }
+        }
+
+      `}</style>
+
+      {initialLoading && (
+        <div className={`app-preloader-overlay ${isIndependenceDay ? 'independence-day-preloader' : ''}`} role="alert" aria-busy="true">
+          <div className="app-preloader-box">
+            {isIndependenceDay ? (
+              <div className="independence-day-preloader-flag" role="img" aria-label="Nigerian flag waving">
+                <div className="independence-day-preloader-cloth">
+                  {Array.from({ length: 12 }, (_, index) => (
+                    <span
+                      key={index}
+                      className="independence-day-preloader-cloth-segment"
+                      style={{
+                        '--segment-position': `${(index / 11) * 100}%`,
+                        '--wave-delay': `${-index * 0.075}s`
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <img src="/logo/logomain.png" alt="Paz Thriving Tribe logo" className="app-preloader-logo" />
+            )}
+            <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.6' }}>{isIndependenceDay ? `Celebrating Nigeria · 9JA@${independenceAnniversary}` : 'Preparing your Paz Thriving Tribe experience...'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Cookie preferences toaster */}
+      {showCookieBanner && (
+        <div className="toast-notification-container cookie-consent-toast-container" role="region" aria-label="Cookie preferences">
+          <div className="cookie-consent-toast">
+            <i className="cookie-consent-icon fa-solid fa-cookie-bite" aria-hidden="true"></i>
+            <div className="cookie-consent-copy">
+              We use cookies and local storage to remember your preferences and improve your experience.
+            </div>
+            <div className="cookie-consent-actions">
+              <button className="cookie-accept-btn" type="button" onClick={acceptCookieConsent}>
+                Accept Cookies
+              </button>
+              <button className="cookie-decline-btn" type="button" onClick={declineCookieConsent}>
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="toast-notification-container">
+          <div className={`toast-notification ${toastType}`}>
+            <i
+              className={`toast-status-icon fa-solid ${toastType === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}`}
+              aria-hidden="true"
+            ></i>
+            <span className="toast-message-text">{toastMessage}</span>
+            <button type="button" className="toast-close-btn" onClick={() => setToastMessage(null)} aria-label="Dismiss notification">×</button>
+          </div>
+        </div>
+      )}
+
+      <div className={`full-view-app-root-override ${isVendorRoute ? 'vendor-route-root' : ''} ${isIndependenceDay ? 'independence-day-theme' : ''}`}>
+        {isIndependenceDay && (
+          <>
+            <div className="independence-day-ribbon" role="status" aria-live="polite">
+              🇳🇬 NIGERIA INDEPENDENCE DAY · NAIJA @{independenceAnniversary} 🇳🇬
+            </div>
+            <div className="independence-day-flag-flight-layer" aria-hidden="true">
+              {[0, 1, 2].map((flag) => <img key={flag} className="independence-day-flag-flight" src="/image/nigeria-independence-flag.svg" alt="" />)}
+            </div>
+          </>
+        )}
+        {!location.pathname.startsWith('/paz-world') && (
+          <button
+            type="button"
+            className={`scroll-to-top-btn ${showScrollTop ? 'visible' : ''}`}
+            onClick={scrollToTop}
+            aria-label="Back to top"
+          >
+            <i className="fa-solid fa-arrow-up"></i>
+          </button>
+        )}
+
+        {/* FLOATING WHATSAPP ACTION */}
+        {!isAdminRoute && !isVendorRoute && !isStoreRoute && !location.pathname.startsWith('/paz-world') && (
+          <div className="floating-action-shell">
+            <div className={`floating-action-tip ${showWhatsappTip ? 'visible' : ''}`}>
+              {whatsappTips[whatsappTipIndex]}
+            </div>
+            <a
+              href={whatsappLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="floating-action-trigger"
+              aria-label="Chat on WhatsApp"
+            >
+              <i className="fa-brands fa-whatsapp"></i>
+            </a>
+          </div>
+        )}
+
+        {/* STICKY HEADER NAVIGATION BAR (shared across site and admin pages on mobile) */}
+        {!initialLoading && !isVendorRoute && !location.pathname.startsWith('/paz-world') && (
+          <header className="public-navbar">
+          <Link to={withIndependencePreview('/')} className="nav-logo-brand-zone" onClick={() => { setNavOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+            <img src="/logo/logomain.png" alt="Paz Thriving Tribe logo" className="nav-logo-img" />
+            <div className="nav-brand-name">Paz Thriving Tribe</div>
+          </Link>
+          <div className="nav-right-cluster">
+            {!isAdminRoute && (
+              <Link to={withIndependencePreview('/shop')} className={`nav-shop-link ${isShopMenuActive ? 'active' : ''}`} style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                <i className="fa-solid fa-bag-shopping"></i> Shop
+              </Link>
+            )}
+            {!isAdminRoute && (
+              <div className="nav-cta-group">
+                <Link to={withIndependencePreview('/teens_reg')} className="nav-cta-link" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-user-plus" aria-hidden="true"></i>
+                  <span>Apply</span>
+                </Link>
+                <Link to={withIndependencePreview('/vendor')} className="nav-cta-link vendor-nav-link" style={independenceNavStyle} onClick={() => setNavOpen(false)} aria-label="Register as a vendor" title="Register as a vendor">
+                  <i className="fa-solid fa-store" aria-hidden="true"></i>
+                  <span>Vendor</span>
+                </Link>
+                <Link to={withIndependencePreview('/book-session')} className="nav-cta-link secondary" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-calendar-check" aria-hidden="true"></i>
+                  <span>Book</span>
+                </Link>
+              </div>
+            )}
+            <button className="nav-menu-toggle" style={independenceNavStyle} onClick={() => setNavOpen((current) => !current)} aria-label="Toggle navigation menu">
+              <i className={navOpen ? 'fa-solid fa-xmark' : 'fa-solid fa-bars'}></i>
+            </button>
+          </div>
+          <nav className={`nav-navigation-links ${navOpen ? 'mobile-open' : ''}`}>
+            {!isAdminRoute && (
+              <>
+                <Link to={withIndependencePreview('/')} className="nav-link-item" style={independenceNavStyle} onClick={() => { setNavOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                  <i className="fa-solid fa-house"></i> Home
+                </Link>
+                <Link to={withIndependencePreview('/care-counseling')} className="nav-link-item" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-hand-holding-heart"></i> Talk & Thrive
+                </Link>
+                <Link to={withIndependencePreview('/teens-kids-academy')} className="nav-link-item" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-child-reaching"></i> Thriving Pre-teens & Teens
+                </Link>
+                <Link to={withIndependencePreview('/services/family')} className="nav-link-item" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-people-roof"></i> Thriving Parents
+                </Link>
+                <Link to={withIndependencePreview('/services/marriage')} className="nav-link-item" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-heart-crack"></i> Thriving Women
+                </Link>
+                <Link to="/paz-world/" className={`nav-link-item ${location.pathname.startsWith('/paz-world') ? 'active' : ''}`} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-comments"></i> PAZ World
+                </Link>
+              </>
+            )}
+
+            {isAdminRoute && session && (
+              <button
+                type="button"
+                className="nav-cta-btn"
+                onClick={() => {
+                  setNavOpen(false);
+                  handleSignOut();
+                }}
+              >
+                <i className="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+                <span>Sign out</span>
+              </button>
+            )}
+
+          </nav>
+          </header>
+        )}
+
+        <Suspense fallback={<div className="route-loading-fallback" role="status">Loading PAZ…</div>}>
+        <Routes>
+          <Route path="/paz-world" element={<Navigate to="/paz-world/" replace />} />
+          <Route path="/paz-world/" element={<SolutionChatPage />} />
+          {/* =========================================================================
+             HOME ROUTE (WITH DYNAMIC SLIDING HERO BANNER)
+             ========================================================================= */}
+          <Route
+            path="/"
+            element={
+              <div className="public-website-container">
+                <section className="hero-section">
+                  {(() => {
+                    const currentSlide = homeSlides[currentHomeSlide] || homeSlides[0];
+                    const actionPath = currentSlide.actionPath || (currentSlide.independenceDay
+                      ? '/shop'
+                      : currentSlide.title === 'Structured Teens Development Program'
+                        ? '/teens_reg'
+                        : currentSlide.title === 'Share Your Feedback'
+                          ? '/feedback'
+                          : ((currentSlide.title === 'Need Someone to Talk To?' || currentSlide.title === 'We Also Offer Church Coaching Sessions') ? '/book-session' : '/teens_reg'));
+                    const actionLabel = currentSlide.actionLabel || (currentSlide.independenceDay
+                      ? 'Explore the story'
+                      : currentSlide.title === 'Structured Teens Development Program'
+                        ? 'Apply Now'
+                        : currentSlide.title === 'Share Your Feedback'
+                          ? 'Take the Survey'
+                          : ((currentSlide.title === 'Need Someone to Talk To?' || currentSlide.title === 'We Also Offer Church Coaching Sessions') ? 'Book Now' : 'Register Now'));
+                    const actionIcon = currentSlide.actionIcon || (currentSlide.independenceDay
+                      ? 'fa-solid fa-arrow-right'
+                      : currentSlide.title === 'Structured Teens Development Program'
+                        ? 'fa-solid fa-pen-to-square'
+                        : currentSlide.title === 'Share Your Feedback'
+                          ? 'fa-solid fa-comment-dots'
+                          : ((currentSlide.title === 'Need Someone to Talk To?' || currentSlide.title === 'We Also Offer Church Coaching Sessions') ? 'fa-solid fa-calendar-check' : 'fa-solid fa-user-plus'));
+                    return (
+                      <>
+                        <div
+                          className={`hero-slide-bg ${currentSlide.imageType === 'contain' ? 'hero-bg-contain' : ''} ${currentSlide.imageType === 'bottom' ? 'hero-slide-bottom' : ''} ${currentSlide.slideClassName || ''}`}
+                          role={currentSlide.imageAlt ? 'img' : undefined}
+                          aria-label={currentSlide.imageAlt}
+                          style={{
+                            backgroundImage: currentSlide.imageType === 'contain' ? 'none' : `url(${currentSlide.image})`,
+                            backgroundSize: currentSlide.imageType === 'logo' ? 'contain' : 'cover',
+                            backgroundPosition: currentSlide.imageType === 'bottom' ? 'center bottom' : 'center',
+                            backgroundRepeat: 'no-repeat'
+                          }}
+                        />
+                        {currentSlide.imageType === 'contain' && (
+                          <img
+                            src={currentSlide.image}
+                            alt="Banner"
+                            className="hero-inline-contain-img"
+                          />
+                        )}
+                        {currentSlide.imageType !== 'contain' && (
+                          <div className="hero-overlay" key={currentHomeSlide}>
+                            <div className="hero-copy-card">
+                              {currentSlide.eyebrow && <span className="hero-independence-day-kicker">{currentSlide.eyebrow}{currentSlide.independenceDay ? ` · NAIJA @${independenceAnniversary}` : ''}</span>}
+                              <h1>{currentSlide.title}</h1>
+                              <p>{currentSlide.subtitle}</p>
+                              {!currentSlide.hideAction && <div className="hero-action-row">
+                                <button
+                                  className="hero-scroll-btn"
+                                  onClick={() => navigate(actionPath)}
+                                >
+                                  {actionLabel}
+                                  <i className={actionIcon}></i>
+                                </button>
+                              </div>}
+                            </div>
+                            <div className="hero-arrow-cluster" aria-label="Slide navigation">
+                              <button
+                                type="button"
+                                className="hero-nav-btn"
+                                aria-label="Previous slide"
+                                onClick={() => setCurrentHomeSlide((prev) => (prev - 1 + homeSlides.length) % homeSlides.length)}
+                              >
+                                <i className="fa-solid fa-chevron-left"></i>
+                              </button>
+                              <button
+                                type="button"
+                                className="hero-nav-btn"
+                                aria-label="Next slide"
+                                onClick={() => setCurrentHomeSlide((prev) => (prev + 1) % homeSlides.length)}
+                              >
+                                <i className="fa-solid fa-chevron-right"></i>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </section>
+                {heroPopupMode && (
+                  <Suspense fallback={null}>
+                    <ThriverRegistrationModal
+                    visible={Boolean(heroPopupMode)}
+                    mode={heroPopupMode}
+                    onClose={() => {
+                      setHeroPopupMode(null);
+                      setBookingSubmitted(false);
+                    }}
+                    onRegister={async (registrationData) => {
+                      await addApplicant(registrationData);
+                    }}
+                    paystackPublicKey={paystackPublicKey}
+                    bookingForm={bookingForm}
+                    setBookingForm={setBookingForm}
+                    bookingSubmitted={bookingSubmitted}
+                    handleHeroBookingSubmit={handleHeroBookingSubmit}
+                  />
+                  </Suspense>
+                )}
+
+                <section className="program-highlights-section">
+                  <div className="highlight-grid">
+                    {homeHighlights.map((item, index) => (
+                      <article key={item.title} className="highlight-card">
+                        <div className="highlight-icon-wrap">
+                          <i className={item.icon}></i>
+                        </div>
+                        <h3>{item.title}</h3>
+                        <p>{item.text}</p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="teachable-moments-section">
+                  <div className="founder-video-feature">
+                    <div className="founder-video-heading">
+                      <div>
+                        <span className="founder-video-eyebrow"><i className="fa-brands fa-youtube"></i> Teachable Moments</span>
+                        <h2>{activeYoutubeVideo?.title || 'Teachable Moments with Coach Roseline'}</h2>
+                        <p>{activeYoutubeVideo?.summary || 'Watch the latest message from Coach Roseline.'}</p>
+                        {youtubeVideos.length > 1 && (
+                          <span className="founder-video-playlist-note">{youtubeVideos.length} published moments in the playlist</span>
+                        )}
+                      </div>
+                      <div className="founder-video-controls" aria-label="Teachable Moments videos">
+                        <button
+                          type="button"
+                          onClick={() => setActiveYoutubeIndex((current) => current > 0 ? current - 1 : youtubeVideos.length - 1)}
+                          disabled={youtubeVideos.length < 2}
+                          aria-label="Previous Teachable Moments video"
+                          title="Previous video"
+                        >
+                          <i className="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <span>{youtubeVideos.length ? `${activeYoutubeIndex + 1} / ${youtubeVideos.length}` : '1 / 1'}</span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveYoutubeIndex((current) => youtubeVideos.length ? (current + 1) % youtubeVideos.length : 0)}
+                          disabled={youtubeVideos.length < 2}
+                          aria-label="Next Teachable Moments video"
+                          title="Next video"
+                        >
+                          <i className="fa-solid fa-chevron-right"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="founder-video-embed-wrap">
+                      {activeYoutubeVideo?.embedUrl ? (
+                        <div ref={youtubePlayerContainerRef} className="founder-video-youtube-player"></div>
+                      ) : (
+                        <div className="founder-video-empty-state">
+                          <i className="fa-brands fa-youtube" aria-hidden="true"></i>
+                          <span>The next Teachable Moment will appear here.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                <section id="founder-suite" className="founder-executive-suite">
+                  <div className="founder-portrait-frame">
+                    <img src="../image/pic1.jpeg" className="founder-img" alt="Paz Tribe CEO" />
+                    <div className="founder-title-tag-overlay">
+                      <h4>Roseline Iraoya </h4>
+                      <span>Certified Children and Teens Coach</span>
+                      <span>Paz Thriving Tribe</span>
+                    </div>
+                  </div>
+
+                  <div className="founder-interactive-message-box">
+                    <nav className="founder-msg-nav-row">
+                      <button className={`founder-nav-pill ${founderActiveTab === 'speech' ? 'active' : ''}`} onClick={() => setFounderActiveTab('speech')}>
+                        <i className="fa-solid fa-microphone"></i> From the Lead Consultant Desk
+                      </button>
+                      <button className={`founder-nav-pill ${founderActiveTab === 'about' ? 'active' : ''}`} onClick={() => setFounderActiveTab('about')}>
+                        <i className="fa-solid fa-building"></i> About Paz Thriving Tribe
+                      </button>
+                      <button className={`founder-nav-pill ${founderActiveTab === 'values' ? 'active' : ''}`} onClick={() => setFounderActiveTab('values')}>
+                        <i className="fa-solid fa-gem"></i> Core Values
+                      </button>
+                    </nav>
+
+                    <div className="animated-message-viewspace" key={founderActiveTab}>
+                      {founderActiveTab === 'speech' && (
+                        <div className="speech-view-block">
+                          <p className="speech-quote-text">
+                            "The lead consultant at Paz Thriving Tribe Academy, a life coaching organization. A certified children's life coach and member of the Chartered Institute of Mentoring and Coaching in Nigeria."
+                          </p>
+                          <div className="speech-signature">Coach Roseline Iraoya, <br /> Certified Children and Teens Coach, <br /> Paz Thriving Tribe</div>
+                        </div>
+                      )}
+
+                      {founderActiveTab === 'about' && (
+                        <div className="about-org-block">
+                          {/* <h3>About Paz Thriving Tribe</h3> */}
+                          <p>
+                            Paz Thriving Tribe Coaching, Mentoring and Counselling Organisation is committed to
+                            impacting individuals, families, transforming teenagers, positively influencing women,
+                            and helping children and young people develop the values, character, and healthy
+                            habits they need to thrive and become purposeful leaders.
+                          </p>
+                          {/* <p className="tagline">
+                            Tagline: Transforming Lives, Building Character, Raising Leaders
+                          </p> */}
+
+                        </div>
+                      )}
+
+                      {founderActiveTab === 'values' && (
+                        <div className="core-values-matrix">
+                          <div className="value-card-element">
+                            <h5><i className="fa-solid fa-award"></i> Excellence</h5>
+                            <p>We encourage individuals to give their best in every area of life, striving for continuous growth, improvement, and outstanding character.</p>
+                          </div>
+                          <div className="value-card-element">
+                            <h5><i className="fa-solid fa-scale-balanced"></i> Integrity</h5>
+                            <p>We uphold honesty, accountability, and strong moral principles, doing what is right even when no one is watching.</p>
+                          </div>
+                          <div className="value-card-element">
+                            <h5><i className="fa-solid fa-user-gear"></i> Leadership</h5>
+                            <p>We empower children, teenagers, and women to influence others positively, take responsibility, and become agents of positive change.</p>
+                          </div>
+                          <div className="value-card-element">
+                            <h5><i className="fa-solid fa-user-lock"></i>Confidentiality</h5>
+                            <p>We value trust and privacy, ensuring that every individual feels safe, respected, and secure when sharing their thoughts and experiences with us.</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="synchronized-promo-banner">
+                  <div className="banner-slider">
+                    {promoSlides.map((slide, idx) => (
+                      <div key={idx} className={`banner-slide ${idx === currentPromoSlide ? 'active' : ''}`}>
+                        <div className="banner-text-package">
+                          <span className="banner-badge"><i className="fa-solid fa-bullseye" style={{ fontSize: '0.8rem' }}></i>Client Review</span>
+                          <p className="review-text">{slide.text.length > 280 ? slide.text.substring(0, 280) + '...' : slide.text}</p>
+                          {slide.text.length > 280 && (
+                            <button className="read-more-btn" onClick={() => setSelectedReview(slide)}>
+                              Read More <i className="fa-solid fa-arrow-right" style={{ fontSize: '0.75rem', marginLeft: '0.4rem' }}></i>
+                            </button>
+                          )}
+                          <div className="testimonial-author">{slide.title}</div>
+                        </div>
+                        {slide.imageType === 'logo' ? (
+                          <div className="slide-graphic" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent' }}>
+                            <img src={slide.image} alt={slide.title} style={{ width: 220, height: 220, objectFit: 'contain' }} />
+                          </div>
+                        ) : (
+                          <div className="slide-graphic" style={{ backgroundImage: `url(${slide.image})` }} />
+                        )}
+                      </div>
+                    ))}
+
+                    <div className="banner-controls">
+                      <button className="banner-arrow banner-arrow-prev" onClick={handlePrevReview} aria-label="Previous review">
+                        <i className="fa-solid fa-chevron-left"></i>
+                      </button>
+                      <div className="banner-dots-wrapper">
+                        {promoSlides.map((_, i) => (
+                          <button key={i} className={`banner-dot ${i === currentPromoSlide ? 'active' : ''}`} onClick={() => { setCurrentPromoSlide(i); setPromoSlideAutoPlay(false); }} aria-label={`Go to slide ${i + 1}`} />
+                        ))}
+                      </div>
+                      <button className="banner-arrow banner-arrow-next" onClick={handleNextReview} aria-label="Next review">
+                        <i className="fa-solid fa-chevron-right"></i>
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Review Modal Popup */}
+                {selectedReview && (
+                  <div className="review-modal-overlay" onClick={() => setSelectedReview(null)}>
+                    <div className="review-modal-content" onClick={(e) => e.stopPropagation()}>
+                      <button className="review-modal-close" onClick={() => setSelectedReview(null)}>
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                      <div className="review-modal-header">
+                        <span className="review-modal-badge"><i className="fa-solid fa-star"></i> Client Review</span>
+                        <h3>{selectedReview.title}</h3>
+                      </div>
+                      <p className="review-modal-text">{selectedReview.text}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Interactive Gateway Matrix */}
+                <section id="services-explore" className="interactive-tabs-section">
+                  <span className="section-label">Explore the main programs</span>
+                  <h2 className="section-title-heading">What we offer</h2>
+                  <p className="section-subtext">Choose the area that fits your current season and discover a tailored path for growth, mentoring, and support.</p>
+
+                  <div className="services-routing-grid">
+                    <Link to="/care-counseling" className="service-gateway-card" onClick={handleRouteTopNavigation}>
+                      <div>
+                        <div className="gateway-icon-wrap"><i className="fa-solid fa-hand-holding-heart"></i></div>
+                        <h3>Talk & Thrive</h3>
+                        <p>Guidance and support for emotional wellbeing, everyday parenting, and personal growth in a safe, caring space.</p>
+                      </div>
+                      <div className="gateway-footer-action">Read more<i className="fa-solid fa-arrow-trend-up"></i></div>
+                    </Link>
+
+                    <Link to="/services/children" className="service-gateway-card" onClick={handleRouteTopNavigation}>
+                      <div>
+                        <div className="gateway-icon-wrap"><i className="fa-solid fa-child-reaching"></i></div>
+                        <h3>{services.children.title}</h3>
+                        <p>{services.children.description.slice(0, 140)}{services.children.description.length > 140 ? '...' : ''}</p>
+                      </div>
+                      <div className="gateway-footer-action">Read more <i className="fa-solid fa-arrow-trend-up"></i></div>
+                    </Link>
+
+                    <Link to="/services/family" className="service-gateway-card" onClick={handleRouteTopNavigation}>
+                      <div>
+                        <div className="gateway-icon-wrap"><i className="fa-solid fa-people-roof"></i></div>
+                        <h3>{services.family.title}</h3>
+                        <p>{services.family.description.slice(0, 140)}{services.family.description.length > 140 ? '...' : ''}</p>
+                      </div>
+                      <div className="gateway-footer-action">Read more<i className="fa-solid fa-arrow-trend-up"></i></div>
+                    </Link>
+
+                    <Link to="/services/marriage" className="service-gateway-card" onClick={handleRouteTopNavigation}>
+                      <div>
+                        <div className="gateway-icon-wrap"><i className="fa-solid fa-heart-crack"></i></div>
+                        <h3>{services.marriage.title}</h3>
+                        <p>{services.marriage.description.slice(0, 140)}{services.marriage.description.length > 140 ? '...' : ''}</p>
+                      </div>
+                      <div className="gateway-footer-action">Read more<i className="fa-solid fa-arrow-trend-up"></i></div>
+                    </Link>
+                  </div>
+                </section>
+
+                <Suspense fallback={<div className="gallery-loading-placeholder" aria-hidden="true" />}>
+                  <GallerySection />
+                </Suspense>
+
+                <section className="testimonial-showcase-section">
+                  <div className="testimonial-slider-header" style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                    <span style={{ display: 'inline-block', fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#1e7d5b', marginBottom: '0.75rem' }}>
+                      Client Voices
+                    </span>
+                    <h2 style={{ margin: 0, fontSize: 'clamp(2rem, 3vw, 3rem)', color: '#1a1a1a' }}>What families and teens are saying</h2>
+                    <p className="testimonial-intro">Every story reflects a different starting point, but the goal is shared: practical support that helps young people and their families move forward with confidence.</p>
+                  </div>
+
+                  <div className="testimonial-layout">
+                    <div className="testimonial-slider-card">
+                      {promoSlides.length > 0 ? (
+                        promoSlides.map((slide, index) => (
+                          <article
+                            key={`${slide.title}-${slide.id || index}`}
+                            className={`testimonial-slide-panel ${index === currentPromoSlide ? 'active' : ''}`}
+                          >
+                            <div className="testimonial-slide-content">
+                              <div className="testimonial-badge"><i className="fa-solid fa-star"></i> Client Review</div>
+                              <div className="testimonial-review-context"><i className="fa-solid fa-quote-left"></i><span>Shared by a member of our community</span></div>
+                              <p className="testimonial-quote">“{slide.text || 'Thank you for sharing your story with our community.'}”</p>
+                              <div className="testimonial-meta">
+                                <div>
+                                  <div className="testimonial-author" style={{ marginTop: 0 }}>{slide.title || 'Anonymous'}</div>
+                                  <div className="testimonial-origin">{slide.origin || 'Parent'}</div>
+                                </div>
+                                <div className="testimonial-controls">
+                                  <button className="banner-arrow" onClick={handlePrevReview} aria-label="Previous review">
+                                    <i className="fa-solid fa-chevron-left"></i>
+                                  </button>
+                                  <button className="banner-arrow" onClick={handleNextReview} aria-label="Next review">
+                                    <i className="fa-solid fa-chevron-right"></i>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="testimonial-slide-panel active">
+                          <div className="testimonial-slide-content">
+                            <div className="testimonial-badge"><i className="fa-solid fa-star"></i> Client Review</div>
+                            <p className="testimonial-quote">“We are committed to helping families and teens build confidence, connection, and purpose.”</p>
+                            <div className="testimonial-meta">
+                              <div>
+                                <div className="testimonial-author" style={{ marginTop: 0 }}>Paz Thriving Tribe</div>
+                                <div className="testimonial-origin">Community</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="testimonial-form-card">
+                      <h3>Share your story</h3>
+                      <form className="testimonial-form" onSubmit={handleTestimonialSubmission}>
+                        <div className="testimonial-field">
+                          <label htmlFor="testimonial-name">Parent name</label>
+                          <input
+                            id="testimonial-name"
+                            type="text"
+                            value={testimonialSubmission.name}
+                            onChange={(e) => setTestimonialSubmission((prev) => ({ ...prev, name: e.target.value }))}
+                            placeholder="Your name"
+                          />
+                        </div>
+                        <div className="testimonial-field">
+                          <label htmlFor="testimonial-origin">Child / program</label>
+                          <input
+                            id="testimonial-origin"
+                            type="text"
+                            value={testimonialSubmission.origin}
+                            onChange={(e) => setTestimonialSubmission((prev) => ({ ...prev, origin: e.target.value }))}
+                            placeholder="e.g. Teen Leadership"
+                          />
+                        </div>
+                        <div className="testimonial-field">
+                          <label htmlFor="testimonial-message">Your testimonial</label>
+                          <textarea
+                            id="testimonial-message"
+                            value={testimonialSubmission.message}
+                            onChange={(e) => setTestimonialSubmission((prev) => ({ ...prev, message: e.target.value }))}
+                            placeholder="Tell us how our program worked for your family..."
+                          />
+                        </div>
+                        <button type="submit" className="testimonial-submit-btn" disabled={testimonialSubmitting}>{testimonialSubmitting ? 'Submitting...' : 'Submit testimonial'}</button>
+                        <p className="testimonial-status">{testimonialSubmitStatus}</p>
+                      </form>
+                    </div>
+                  </div>
+                </section>
+
+                {/* FAQ Section */}
+                <section id="faq-section" className="faq-main-section">
+                  <div className="faq-container-wrapper">
+                    <div className="faq-header-block">
+                      {/* <span className="faq-section-label">Common Questions</span> */}
+                      <h2>Frequently Asked Questions</h2>
+                      <p>Find answers to common questions about our coaching, programs, and how to get started with Paz Thriving Tribe.</p>
+                    </div>
+
+                    <div className="faq-accordion-wrapper">
+                      {faqItems.map((item, index) => (
+                        <div key={index} className="faq-item-card">
+                          <button
+                            className={`faq-question-button ${expandedFaqIndex === index ? 'active' : ''}`}
+                            onClick={() => setExpandedFaqIndex(expandedFaqIndex === index ? -1 : index)}
+                          >
+                            <span className="faq-question-text">{item.question}</span>
+                            <span className="faq-toggle-icon">
+                              <i className="fa-solid fa-chevron-down"></i>
+                            </span>
+                          </button>
+                          {expandedFaqIndex === index && (
+                            <div className="faq-answer-content">
+                              <p>{item.answer}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="faq-cta-footer">
+                      <p>Didn't find your answer?</p>
+                      <a href="#contact" className="faq-contact-link">Contact us directly →</a>
+                    </div>
+                  </div>
+                </section>
+
+
+              </div>
+            }
+          />
+
+          {/* =========================================================================
+             DEDICATED ROUTE PATTERNS FOR INDIVIDUAL PAGE VIEWS
+             ========================================================================= */}
+          <Route path="/teens-kids-academy" element={<TeensKidsMenu paystackPublicKey={paystackPublicKey} teensKidsMonthlyFee={teensKidsMonthlyFee} />} />
+          <Route path="/tee" element={<TeensRegistrationPage />} />
+          <Route path="/teens-registration" element={<TeensRegistrationPage paystackPublicKey={paystackPublicKey} />} />
+          <Route path="/teens_reg" element={<TeensRegistrationPage paystackPublicKey={paystackPublicKey} />} />
+          <Route path="/teens-reg" element={<TeensRegistrationPage paystackPublicKey={paystackPublicKey} />} />
+          <Route path="/book-session" element={<BookSessionPage />} />
+          <Route path="/feedback" element={<FeedbackPage />} />
+          <Route path="/store/*" element={<Navigate to="/shop" replace />} />
+          <Route path="/shop" element={<div className="public-website-container shop-page-shell" style={{ paddingTop: '72px' }}><ShopPage onOrderSubmitted={setShopOrders} paystackPublicKey={paystackPublicKey} storeProducts={storeProducts} storeBankAccount={storeBankAccount} isIndependenceDay={isIndependenceDay} independenceAnniversary={independenceAnniversary} isIndependencePreview={isIndependencePreview} /></div>} />
+          <Route path="/shop/:productName" element={<div className="public-website-container shop-page-shell" style={{ paddingTop: '72px' }}><ShopPage onOrderSubmitted={setShopOrders} paystackPublicKey={paystackPublicKey} storeProducts={storeProducts} storeBankAccount={storeBankAccount} isIndependenceDay={isIndependenceDay} independenceAnniversary={independenceAnniversary} isIndependencePreview={isIndependencePreview} /></div>} />
+          <Route path="/vendor" element={<><VendorDashboard /><CustomerSupportChat /></>} />
+          <Route path="/payment/callback" element={<PaystackCallbackPage />} />
+          <Route path="/care-counseling" element={<CareCounselingPage />} />
+          <Route path="/services/family" element={<ComingSoonPage title="Thriving Parents" description="Empowering parents with tools and wisdom" />} />
+          <Route path="/services/marriage" element={<ComingSoonPage title="Thriving Women" description="Transforming lives, building confidence" />} />
+          <Route path="/services/:serviceSlug" element={<ServicePageWrapper services={services} programs={programs} onIntakeSubmit={handleServiceIntakeSubmit} />} />
+
+          {/* Administrative Gateway Login */}
+          <Route
+            path="/admin"
+            element={
+              <AdminDashboard
+                mode="login"
+                session={session}
+                isAdmin={isAdmin}
+                adminAccessLoading={adminAccessLoading}
+                loading={loading}
+                authError={authError}
+                email={email}
+                password={password}
+                setEmail={setEmail}
+                setPassword={setPassword}
+                handleSignIn={handleSignIn}
+                handleSignOut={handleSignOut}
+                selectedAdminTab={selectedAdminTab}
+                setSelectedAdminTab={setSelectedAdminTab}
+                dashboardMessage={dashboardMessage}
+                cmsErrorMessage={cmsErrorMessage}
+                cmsSuccessMessage={cmsSuccessMessage}
+                clientActivityLog={clientActivityLog}
+                clientActivityLoading={clientActivityLoading}
+                applicants={applicants}
+                contactMessages={contactMessages}
+                bookings={bookings}
+                parentFeedback={parentFeedback}
+                setParentFeedback={setParentFeedback}
+                socialNewsFeed={socialNewsFeed}
+                socialEditTarget={socialEditTarget}
+                setSocialEditTarget={setSocialEditTarget}
+                socialPreviewTitle={socialPreviewTitle}
+                setSocialPreviewTitle={setSocialPreviewTitle}
+                socialPreviewSummary={socialPreviewSummary}
+                setSocialPreviewSummary={setSocialPreviewSummary}
+                socialPreviewBadgeText={socialPreviewBadgeText}
+                setSocialPreviewBadgeText={setSocialPreviewBadgeText}
+                socialPreviewTimestamp={socialPreviewTimestamp}
+                setSocialPreviewTimestamp={setSocialPreviewTimestamp}
+                socialPreviewUrl={socialPreviewUrl}
+                setSocialPreviewUrl={setSocialPreviewUrl}
+                socialPreviewEmbedUrl={socialPreviewEmbedUrl}
+                setSocialPreviewEmbedUrl={setSocialPreviewEmbedUrl}
+                socialMetadataLoading={socialMetadataLoading}
+                fetchSocialUrlMetadata={fetchSocialUrlMetadata}
+                handleUpdateSocialPreview={handleUpdateSocialPreview}
+                saveYoutubeVideo={saveYoutubeVideo}
+                setYoutubeVideoPublished={setYoutubeVideoPublished}
+                deleteYoutubeVideo={deleteYoutubeVideo}
+                privacyContent={privacyContent}
+                setPrivacyContent={setPrivacyContent}
+                termsContent={termsContent}
+                setTermsContent={setTermsContent}
+                faqContent={faqContent}
+                setFaqContent={setFaqContent}
+                updateFaqItem={updateFaqItem}
+                handleSaveLegalAndFaqContent={handleSaveLegalAndFaqContent}
+                handleUpdateContentCMS={handleUpdateContentCMS}
+                editTarget={editTarget}
+                setEditTarget={setEditTarget}
+                formTitle={formTitle}
+                setFormTitle={setFormTitle}
+                formSubtitle={formSubtitle}
+                setFormSubtitle={setFormSubtitle}
+                formDesc={formDesc}
+                setFormDesc={setFormDesc}
+                formMetric={formMetric}
+                setFormMetric={setFormMetric}
+                promoSlides={promoSlides}
+                testimonialCount={testimonialCount}
+                testimonialAuthor={testimonialAuthor}
+                setTestimonialAuthor={setTestimonialAuthor}
+                testimonialOrigin={testimonialOrigin}
+                setTestimonialOrigin={setTestimonialOrigin}
+                testimonialText={testimonialText}
+                setTestimonialText={setTestimonialText}
+                testimonialEditIndex={testimonialEditIndex}
+                handleAddTestimonial={handleAddTestimonial}
+                handleStartEditTestimonial={handleStartEditTestimonial}
+                handleCancelEditTestimonial={handleCancelEditTestimonial}
+                handleDeleteTestimonial={handleDeleteTestimonial}
+                programForm={programForm}
+                setProgramForm={setProgramForm}
+                programs={programs}
+                handleCreateProgram={handleCreateProgram}
+                handleRemoveProgram={handleRemoveProgram}
+                paystackPublicKey={paystackPublicKey}
+                teensKidsMonthlyFee={teensKidsMonthlyFee}
+                tempPaystackKey={tempPaystackKey}
+                setTempPaystackKey={setTempPaystackKey}
+                tempMonthlyFee={tempMonthlyFee}
+                setTempMonthlyFee={setTempMonthlyFee}
+                setPaystackPublicKey={setPaystackPublicKey}
+                setTeensKidsMonthlyFee={setTeensKidsMonthlyFee}
+                storeProducts={storeProducts}
+                setStoreProducts={setStoreProducts}
+                storeBankAccount={storeBankAccount}
+                setStoreBankAccount={setStoreBankAccount}
+                shopOrders={shopOrders}
+                setShopOrders={setShopOrders}
+              />
+            }
+          />
+
+          {/* Secure Management Console (CMS Dashboard) */}
+          <Route
+            path="/dashboard"
+            element={
+              <AdminDashboard
+                mode="dashboard"
+                session={session}
+                isAdmin={isAdmin}
+                adminAccessLoading={adminAccessLoading}
+                loading={loading}
+                authError={authError}
+                email={email}
+                password={password}
+                setEmail={setEmail}
+                setPassword={setPassword}
+                handleSignIn={handleSignIn}
+                handleSignOut={handleSignOut}
+                selectedAdminTab={selectedAdminTab}
+                setSelectedAdminTab={setSelectedAdminTab}
+                dashboardMessage={dashboardMessage}
+                cmsErrorMessage={cmsErrorMessage}
+                cmsSuccessMessage={cmsSuccessMessage}
+                clientActivityLog={clientActivityLog}
+                clientActivityLoading={clientActivityLoading}
+                applicants={applicants}
+                contactMessages={contactMessages}
+                bookings={bookings}
+                parentFeedback={parentFeedback}
+                setParentFeedback={setParentFeedback}
+                refreshAdminData={refreshAdminData}
+                refreshLoading={refreshingDashboard}
+                socialNewsFeed={socialNewsFeed}
+                socialEditTarget={socialEditTarget}
+                setSocialEditTarget={setSocialEditTarget}
+                socialPreviewTitle={socialPreviewTitle}
+                setSocialPreviewTitle={setSocialPreviewTitle}
+                socialPreviewSummary={socialPreviewSummary}
+                setSocialPreviewSummary={setSocialPreviewSummary}
+                socialPreviewBadgeText={socialPreviewBadgeText}
+                setSocialPreviewBadgeText={setSocialPreviewBadgeText}
+                socialPreviewTimestamp={socialPreviewTimestamp}
+                setSocialPreviewTimestamp={setSocialPreviewTimestamp}
+                socialPreviewUrl={socialPreviewUrl}
+                setSocialPreviewUrl={setSocialPreviewUrl}
+                socialPreviewEmbedUrl={socialPreviewEmbedUrl}
+                setSocialPreviewEmbedUrl={setSocialPreviewEmbedUrl}
+                socialMetadataLoading={socialMetadataLoading}
+                fetchSocialUrlMetadata={fetchSocialUrlMetadata}
+                handleUpdateSocialPreview={handleUpdateSocialPreview}
+                saveYoutubeVideo={saveYoutubeVideo}
+                setYoutubeVideoPublished={setYoutubeVideoPublished}
+                deleteYoutubeVideo={deleteYoutubeVideo}
+                privacyContent={privacyContent}
+                setPrivacyContent={setPrivacyContent}
+                termsContent={termsContent}
+                setTermsContent={setTermsContent}
+                faqContent={faqContent}
+                setFaqContent={setFaqContent}
+                updateFaqItem={updateFaqItem}
+                handleSaveLegalAndFaqContent={handleSaveLegalAndFaqContent}
+                handleUpdateContentCMS={handleUpdateContentCMS}
+                editTarget={editTarget}
+                setEditTarget={setEditTarget}
+                formTitle={formTitle}
+                setFormTitle={setFormTitle}
+                formSubtitle={formSubtitle}
+                setFormSubtitle={setFormSubtitle}
+                formDesc={formDesc}
+                setFormDesc={setFormDesc}
+                formMetric={formMetric}
+                setFormMetric={setFormMetric}
+                promoSlides={promoSlides}
+                testimonialCount={testimonialCount}
+                testimonialAuthor={testimonialAuthor}
+                setTestimonialAuthor={setTestimonialAuthor}
+                testimonialOrigin={testimonialOrigin}
+                setTestimonialOrigin={setTestimonialOrigin}
+                testimonialText={testimonialText}
+                setTestimonialText={setTestimonialText}
+                testimonialEditIndex={testimonialEditIndex}
+                handleAddTestimonial={handleAddTestimonial}
+                handleStartEditTestimonial={handleStartEditTestimonial}
+                handleCancelEditTestimonial={handleCancelEditTestimonial}
+                handleDeleteTestimonial={handleDeleteTestimonial}
+                setProgramForm={setProgramForm}
+                programForm={programForm}
+                programs={programs}
+                handleCreateProgram={handleCreateProgram}
+                handleRemoveProgram={handleRemoveProgram}
+                paystackPublicKey={paystackPublicKey}
+                teensKidsMonthlyFee={teensKidsMonthlyFee}
+                tempPaystackKey={tempPaystackKey}
+                setTempPaystackKey={setTempPaystackKey}
+                tempMonthlyFee={tempMonthlyFee}
+                setTempMonthlyFee={setTempMonthlyFee}
+                setPaystackPublicKey={setPaystackPublicKey}
+                setTeensKidsMonthlyFee={setTeensKidsMonthlyFee}
+                storeProducts={storeProducts}
+                setStoreProducts={setStoreProducts}
+                storeBankAccount={storeBankAccount}
+                setStoreBankAccount={setStoreBankAccount}
+                shopOrders={shopOrders}
+                setShopOrders={setShopOrders}
+              />
+            }
+          />
+
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+        </Suspense>
+
+        {!initialLoading && (location.pathname === '/' || isStoreRoute || location.pathname === '/book-session') && (
+          <HomeHelpModal
+            key={isStoreRoute ? 'shop' : location.pathname === '/book-session' ? 'booking' : 'home'}
+            context={isStoreRoute ? 'shop' : location.pathname === '/book-session' ? 'booking' : 'home'}
+            services={isStoreRoute ? shopHelpServices : location.pathname === '/book-session' ? bookingHelpServices : homeHelpServices}
+          />
+        )}
+
+        {!isAdminRoute && !isVendorRoute && !isStoreRoute && location.pathname !== '/' && !location.pathname.startsWith('/paz-world') && (
+          <Suspense fallback={null}><CustomerSupportChat /></Suspense>
+        )}
+
+        {/* Contact Us Section */}
+        {!isRegistrationRoute && !isAdminRoute && !isVendorRoute && !isFeedbackRoute && !isStoreRoute && !location.pathname.startsWith('/paz-world') && (
+          <section id="contact" className="contact-us-section">
+            <div className="contact-container-wrapper">
+            <div className="contact-header-block">
+              <span className="contact-section-label">Get In Touch</span>
+              <h2>Contact Us</h2>
+              <p>Have questions or ready to start your journey? We're here to help. Reach out to our team and we'll get back to you as soon as possible.</p>
+            </div>
+
+            <div className="contact-content-grid">
+              <div className="contact-info-cards">
+                <div className="contact-info-item">
+                  <div className="contact-icon-box">
+                    <i className="fa-solid fa-phone"></i>
+                  </div>
+                  <div className="contact-info-details">
+                    <h4>Phone</h4>
+                    <p>+234 (0) 803 738 3820</p>
+                  </div>
+                </div>
+
+                <div className="contact-info-item">
+                  <div className="contact-icon-box">
+                    <i className="fa-solid fa-envelope"></i>
+                  </div>
+                  <div className="contact-info-details">
+                    <h4>Email</h4>
+                    <p>pazthrivingtribe@gmail.com</p>
+                  </div>
+                </div>
+
+                <div className="contact-info-item">
+                  <div className="contact-icon-box">
+                    <i className="fa-solid fa-location-dot"></i>
+                  </div>
+                  <div className="contact-info-details">
+                    <h4>Address</h4>
+                    <p>#5 Muyibat Ashani Street, Peaceville Estate, Badore, Ajah, Lagos</p>
+                  </div>
+                </div>
+
+                <div className="contact-info-item">
+                  <div className="contact-icon-box">
+                    <i className="fa-solid fa-clock"></i>
+                  </div>
+                  <div className="contact-info-details">
+                    <h4>Hours</h4>
+                    <p>Mon - Fri: 9:00 AM - 6:00 PM</p>
+                  </div>
+                </div>
+              </div>
+
+              <form className="contact-form-wrapper" onSubmit={handleContactFormSubmit}>
+                <div className="form-input-container">
+                  <label>Your Name</label>
+                  <input
+                    type="text"
+                    placeholder="Johnson Ime"
+                    value={contactForm.name}
+                    onChange={(e) => setContactForm((prev) => ({ ...prev, name: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-input-container">
+                  <label>Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="johnson@example.com"
+                    value={contactForm.email}
+                    onChange={(e) => setContactForm((prev) => ({ ...prev, email: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-input-container">
+                  <label>Subject</label>
+                  <input
+                    type="text"
+                    placeholder="How can we help?"
+                    value={contactForm.subject}
+                    onChange={(e) => setContactForm((prev) => ({ ...prev, subject: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-input-container">
+                  <label>Message</label>
+                  <textarea
+                    rows="5"
+                    placeholder="Tell us more about your inquiry..."
+                    value={contactForm.message}
+                    onChange={(e) => setContactForm((prev) => ({ ...prev, message: e.target.value }))}
+                    required
+                    style={{ resize: 'vertical' }}
+                  />
+                </div>
+                <button type="submit" className="contact-submit-btn" disabled={contactSubmitting}>{contactSubmitting ? 'Sending...' : 'Send Message'}</button>
+              </form>
+            </div>
+          </div>
+        </section>
+        )}
+
+        {/* Global Multi-Column Footer Component */}
+        {!isAdminRoute && !isVendorRoute && !isFeedbackRoute && !isStoreRoute && !location.pathname.startsWith('/paz-world') && (
+          <footer className="workspace-fluid-footer">
+            <div className="footer-columns-container">
+              <div className="footer-brand-column">
+                <Link to="/" className="footer-brand-logo-row" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                  <div className="footer-vector-badge"><img src="/logo/logomain.png" alt="PTT logo" className="nav-logo-img" /></div>
+                  <span className="footer-brand-headline">Paz Thriving Tribe</span>
+                </Link>
+                <p>Paz Thriving Tribe Coaching, Mentoring and Counselling Organisation is committed to
+                  impacting individuals, families, transforming teenagers, positively influencing women,
+                  and helping children and young people develop the values, character, and healthy
+                  habits they need to thrive and become purposeful leaders.</p>
+                <div className="footer-social-links">
+                  <a href="https://facebook.com/pazthrivingtribe" target="_blank" rel="noopener noreferrer" className="footer-social-icon" aria-label="Facebook">
+                    <i className="fa-brands fa-facebook-f"></i>
+                  </a>
+                <a href="https://instagram.com/pazthrivingtribe" target="_blank" rel="noopener noreferrer" className="footer-social-icon" aria-label="Instagram">
+                  <i className="fa-brands fa-instagram"></i>
+                </a>
+                <a href="https://twitter.com/pazthrivingtribe" target="_blank" rel="noopener noreferrer" className="footer-social-icon" aria-label="Twitter">
+                  <i className="fa-brands fa-twitter"></i>
+                </a>
+                <a href="https://youtube.com/@pazthrivingtribe" target="_blank" rel="noopener noreferrer" className="footer-social-icon" aria-label="YouTube">
+                  <i className="fa-brands fa-youtube"></i>
+                </a>
+                <a href="https://linkedin.com/company/pazthrivingtribe" target="_blank" rel="noopener noreferrer" className="footer-social-icon" aria-label="LinkedIn">
+                  <i className="fa-brands fa-linkedin-in"></i>
+                </a>
+              </div>
+            </div>
+
+            <div className="footer-links-column">
+              <h4>What we offer</h4>
+              <div className="footer-interactive-links">
+                <Link to="/care-counseling" className="footer-nav-anchor">Talk & Thrive</Link>
+                <Link to="/services/children" className="footer-nav-anchor">Thriving Pre-teens & Teens</Link>
+                <Link to="/services/family" className="footer-nav-anchor">Thriving Parents</Link>
+                <Link to="/services/marriage" className="footer-nav-anchor">Thriving Women</Link>
+              </div>
+            </div>
+
+            <div className="footer-links-column">
+              <h4>Portals</h4>
+              <div className="footer-interactive-links">
+                <Link to="https://pazthrivingtribe.schoolsfocus.net/signin" className="footer-nav-anchor">Academy Portal</Link>
+              </div>
+            </div>
+
+            <div className="footer-links-column">
+              <h4>Inquiries</h4>
+              <div className="footer-interactive-links">
+                <span style={{ fontSize: '0.95rem', color: 'var(--text-muted)' }}><i className="fa-solid fa-location-dot" style={{ marginRight: '5px' }}></i> Lagos Main Campus, Nigeria</span>
+                <span style={{ fontSize: '0.95rem', color: 'var(--text-muted)' }}><i className="fa-solid fa-envelope" style={{ marginRight: '5px' }}></i> pazthrivingtribe@gmail.com</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="footer-bottom-copyright-strip">
+            <p>&copy; 2026 Paz Thriving Tribe.</p>
+            <div className="footer-regulatory-tags">
+              <button type="button" className="footer-nav-anchor" onClick={() => setActiveLegalPolicy('privacy')}>Privacy</button>
+              <button type="button" className="footer-nav-anchor" onClick={() => setActiveLegalPolicy('terms')}>System Terms</button>
+            </div>
+          </div>
+        </footer>
+        )}
+        {activeLegalPolicy && (
+          <LegalDocumentModal policy={legalDocuments[activeLegalPolicy]} onClose={setActiveLegalPolicy} />
+        )}
+      </div>
+    </>
+  );
+}
+
+// =========================================================================
+// SERVICE ROUTE VIEWS CONTROLLER (WITH INNER TOPIC SLIDER BANNER)
+// =========================================================================
+function ServicePageWrapper({ services, programs, onIntakeSubmit }) {
+  const { serviceSlug } = useParams();
+  const [success, setSuccess] = useState(false);
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0);
+  const [enrolledClasses, setEnrolledClasses] = useState([]);
+  const [formName, setFormName] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formConcern, setFormConcern] = useState('');
+  const activeService = services[serviceSlug];
+
+  const availablePrograms = programs.filter((program) => program.service === serviceSlug);
+  const servicePrograms = {
+    title: availablePrograms.length > 0 ? `${activeService.title} Programs` : "Available Programs",
+    classes: availablePrograms.length > 0 ? availablePrograms.map((program) => ({
+      id: program.id,
+      name: program.name,
+      duration: program.duration,
+      level: program.level,
+      time: program.schedule,
+      description: program.description
+    })) : []
+  };
+
+  // Specific image portfolios for sub-page banners to loop through dynamically
+  const subPageBannerSlides = {
+    family: [
+      {
+        image: "https://images.unsplash.com/photo-1542037104857-ffbe0ba8309e?q=80&w=1200",
+        eyebrow: "Support for every stage of growth",
+        title: "A calm, encouraging space for women and families",
+        text: "Step into a supportive experience designed to help you build clarity, confidence, and practical direction in everyday life."
+      },
+      {
+        image: "https://images.unsplash.com/photo-1609234656388-0ff363383899?q=80&w=1200",
+        eyebrow: "Purposeful guidance",
+        title: "Navigate life transitions with confidence",
+        text: "Our coaching and mentoring approach helps you move forward with a clearer mind, stronger habits, and a grounded sense of purpose."
+      },
+      {
+        image: "https://images.unsplash.com/photo-1506869640319-fe1a24fd76dc?q=80&w=1200",
+        eyebrow: "Growth that feels personal",
+        title: "Practical support for real-life challenges",
+        text: "From communication to strengthening your values, each session is crafted to meet you where you are and guide you forward."
+      }
+    ],
+    marriage: [
+      {
+        image: "https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?q=80&w=1200",
+        eyebrow: "Women’s community and wellness",
+        title: "A trusted place to connect, reflect, and thrive",
+        text: "This space gives women a welcoming environment for personal growth, emotional support, shared learning, and renewed confidence."
+      },
+      {
+        image: "https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?q=80&w=1200",
+        eyebrow: "Mentoring and encouragement",
+        title: "Build relationships that support your next season",
+        text: "Explore practical guidance for self-worth, family connection, leadership, and the confidence to move forward with intention."
+      },
+      {
+        image: "https://images.unsplash.com/photo-1621478378722-43c34346ef26?q=80&w=1200",
+        eyebrow: "Empowerment in practice",
+        title: "Grow into your best self with steady support",
+        text: "Every conversation is designed to help you feel heard, uplifted, and equipped to create meaningful progress in your life."
+      }
+    ],
+    children: [
+      {
+        image: "https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?q=80&w=1200",
+        eyebrow: "For teens, parents, and young leaders",
+        title: "A direct, reassuring guide for young people and families",
+        text: "Our programs help children and teens build confidence, resilience, and healthy habits through consistent mentoring support."
+      },
+      {
+        image: "https://images.unsplash.com/photo-1484662021356-799479afd455?q=80&w=1200",
+        eyebrow: "Mentorship that feels alive",
+        title: "Strengthen focus, confidence, and character",
+        text: "We help young people develop the mindset and skills they need to grow, communicate better, and thrive in life."
+      },
+      {
+        image: "https://images.unsplash.com/photo-1471286174243-e7a4d9afb34a?q=80&w=1200",
+        eyebrow: "Support that keeps moving",
+        title: "Practical learning with a warm, encouraging tone",
+        text: "From workshops to one-on-one support, every opportunity is meant to help young people move forward with clarity and purpose."
+      }
+    ]
+  }[serviceSlug] || [];
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    setActiveSlideIndex(0); // Reset when category changes
+  }, [serviceSlug]);
+
+  // Handle automatic cycling of the service page banner gallery
+  useEffect(() => {
+    if (subPageBannerSlides.length === 0) return;
+    const serviceBannerInterval = setInterval(() => {
+      setActiveSlideIndex((prev) => (prev + 1) % subPageBannerSlides.length);
+    }, 9000);
+    return () => clearInterval(serviceBannerInterval);
+  }, [subPageBannerSlides]);
+
+  const handleEnrollClass = (classItem) => {
+    if (!enrolledClasses.find(c => c.id === classItem.id)) {
+      setEnrolledClasses([...enrolledClasses, classItem]);
+    }
+  };
+
+  const handleRemoveEnrollment = (classId) => {
+    setEnrolledClasses(enrolledClasses.filter(c => c.id !== classId));
+  };
+
+  if (!activeService) {
+    return <Navigate to="/" replace />;
+  }
+
+  const subPageMeta = {
+    family: {
+      newsTitle: "Thriving Parents Update",
+      newsText: "New empowerment guide released: 'Building Confidence & Purpose as an Independent Woman'.",
+      formSub: "Schedule Your Personal Development Consultation"
+    },
+    marriage: {
+      newsTitle: "Women Tribe Connection Brief",
+      newsText: "Upcoming Women's Empowerment Circle meeting scheduled for next month with guest speakers on leadership and sisterhood.",
+      formSub: "Join the Thriving Women Community"
+    },
+    children: {
+      newsTitle: "Thriving Pre-teen & Teens Monitor",
+      newsText: "Cognitive stability milestone tracking update released for one-on-one pre-teen and adolescent mentorship program platforms.",
+      formSub: "Enroll Child / Teenager into Thriving Pre-teen & Teens"
+    }
+  }[serviceSlug];
+
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    if (onIntakeSubmit) {
+      await onIntakeSubmit({
+        fullName: formName,
+        email: formEmail,
+        phone: '',
+        track: serviceSlug,
+        message: formConcern,
+        passportFile: formPassportFile,
+        documentFile: formDocumentFile
+      });
+    }
+    setSuccess(true);
+    setFormName('');
+    setFormEmail('');
+    setFormConcern('');
+    setFormPassportFile(null);
+    setFormDocumentFile(null);
+    setTimeout(() => setSuccess(false), 5000);
+  };
+
+  const currentBannerSlide = subPageBannerSlides[activeSlideIndex] || null;
+
+  return (
+    <div className="public-website-container">
+      {/* DYNAMIC SLIDING TOPIC BANNER */}
+      <section className="service-view-hero-banner">
+        <div
+          className="service-banner-bg"
+          style={{ backgroundImage: `url(${currentBannerSlide?.image || ''})` }}
+        />
+        <div className="service-banner-content" key={activeSlideIndex}>
+          <span
+            className="section-label"
+            style={{ color: '#ffffff', textTransform: 'uppercase', textShadow: '0 2px 10px rgba(0, 0, 0, 0.65)' }}
+          >
+            {currentBannerSlide?.eyebrow || activeService.title}
+          </span>
+          <h1>{currentBannerSlide?.title || activeService.title}</h1>
+          <p>{currentBannerSlide?.text || activeService.subtitle}</p>
+          <div className="service-banner-controls">
+            <button
+              type="button"
+              className="service-banner-btn"
+              aria-label="Previous slide"
+              onClick={() => setActiveSlideIndex((prev) => (prev - 1 + subPageBannerSlides.length) % subPageBannerSlides.length)}
+            >
+              <i className="fa-solid fa-chevron-left"></i>
+            </button>
+            {subPageBannerSlides.map((_, index) => (
+              <button
+                key={index}
+                type="button"
+                className={`service-banner-dot ${index === activeSlideIndex ? 'active' : ''}`}
+                aria-label={`Show slide ${index + 1}`}
+                onClick={() => setActiveSlideIndex(index)}
+              />
+            ))}
+            <button
+              type="button"
+              className="service-banner-btn"
+              aria-label="Next slide"
+              onClick={() => setActiveSlideIndex((prev) => (prev + 1) % subPageBannerSlides.length)}
+            >
+              <i className="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="service-content-split-zone">
+        {/* Main Side Narrative Description */}
+        <div className="service-info-narrative-card">
+          <h2>Strategic Strategy Framework</h2>
+          <h4>Operational Scope Index: {activeService.metricCount}</h4>
+          <p>{activeService.description}</p>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2.5rem', marginTop: '2.5rem' }}>
+            <h3 style={{ marginBottom: '1rem', fontWeight: '800' }}></h3>
+            {/* <p style={{ fontSize: '1rem', color: 'var(--text-muted)', marginBottom: '2rem' }}>{subPageMeta.formSub}</p> */}
+
+            {/* {success ? (
+              <div className="status-feedback-banner"><i className="fa-solid fa-circle-check"></i> Intake requested successfully. Our specialist counselors will reach out to you within 24 hours.</div>
+            ) : (
+              <form onSubmit={handleFormSubmit} className="cms-creation-form-layout" style={{ marginTop: 0 }}>
+                <div className="registration-fields-grid">
+                  <div className="form-input-container">
+                    <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Full Name</label>
+                    <input type="text" required placeholder="John Doe" value={formName} onChange={(e) => setFormName(e.target.value)} className="plain-text-input" />
+                  </div>
+                  <div className="form-input-container">
+                    <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Email Address</label>
+                    <input type="email" required placeholder="johndoe@example.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="plain-text-input" />
+                  </div>
+                </div>
+                <div className="form-input-container">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Specific Primary Concern Context / Program Interest</label>
+                  <textarea rows="4" required placeholder="Provide brief summary details..." value={formConcern} onChange={(e) => setFormConcern(e.target.value)} className="plain-text-input" style={{ resize: 'vertical' }}></textarea>
+                </div>
+                <div className="form-input-container">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Passport Photo (jpg/png)</label>
+                  <input type="file" accept="image/*" onChange={(e) => setFormPassportFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} className="plain-text-input" />
+                </div>
+                <div className="form-input-container">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>Supporting Document (PDF/DOC)</label>
+                  <input type="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*" onChange={(e) => setFormDocumentFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)} className="plain-text-input" />
+                </div>
+                <button type="submit" className="form-submit-action-btn" style={{ maxWidth: '280px' }}><i className="fa-solid fa-paper-plane"></i> Submit Intake Request</button>
+              </form>
+            )} */}
+          </div>
+        </div>
+
+        {/* Dedicated News Column Sidebar */}
+        <div className="service-sidebar-news-stack">
+          <div style={{ textTransform: 'uppercase', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)', letterSpacing: '1px' }}>Topic Channel Feed</div>
+
+          <div className="topic-news-card">
+            <h5><i className="fa-solid fa-hashtag"></i> {subPageMeta.newsTitle}</h5>
+            <h3>Latest Dynamic Update</h3>
+            <p>{subPageMeta.newsText}</p>
+            <div style={{ marginTop: '1.25rem', fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>Updated just now</div>
+          </div>
+
+          <div className="topic-news-card" style={{ opacity: 0.85 }}>
+            <h5><i className="fa-solid fa-bullhorn"></i> Broadcast Channel</h5>
+            <h3>Strategic Ecosystem Alignments</h3>
+            <p>Our baseline structural metrics have shifted forward to support scalable remote dashboard digital sessions starting this week.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* AVAILABLE CLASSES & ENROLLMENT SECTION */}
+      <section style={{ padding: '4rem 2rem', backgroundColor: 'var(--bg-card)', marginTop: '3rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <h2 style={{ marginBottom: '1rem', fontSize: '2.2rem', fontWeight: '800', textAlign: 'center' }}>
+            <i className="fa-solid fa-graduation-cap" style={{ marginRight: '0.5rem', color: 'var(--accent-primary)' }}></i>
+            {servicePrograms.title}
+          </h2>
+          {/*
+            Explore our comprehensive curriculum designed specifically for {activeService.title.toLowerCase()}
+          */}
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: '2rem',
+            marginBottom: '3rem'
+          }}>
+            {servicePrograms.classes.map((classItem, idx) => (
+              <div
+                key={classItem.id}
+                className="enrollment-class-card"
+                style={{
+                  backgroundColor: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '1.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
+                  e.currentTarget.style.transform = 'translateY(-4px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = 'none';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    backgroundColor: 'var(--accent-green)',
+                    color: 'white',
+                    padding: '0.4rem 0.8rem',
+                    borderRadius: '20px',
+                    fontSize: '0.75rem',
+                    fontWeight: '700'
+                  }}>
+                    {classItem.level}
+                  </span>
+                </div>
+
+                <h4 style={{ marginBottom: '0.8rem', fontWeight: '700', fontSize: '1.1rem', lineHeight: '1.4' }}>
+                  {classItem.name}
+                </h4>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.6rem',
+                  marginBottom: '1.5rem',
+                  fontSize: '0.9rem',
+                  color: 'var(--text-muted)',
+                  flexGrow: 1
+                }}>
+                  <div><i className="fa-solid fa-calendar" style={{ marginRight: '0.5rem', color: 'var(--accent-green)' }}></i> {classItem.duration}</div>
+                  <div><i className="fa-solid fa-clock" style={{ marginRight: '0.5rem', color: 'var(--accent-green)' }}></i> {classItem.time}</div>
+                </div>
+
+                <button
+                  onClick={() => handleEnrollClass(classItem)}
+                  disabled={enrolledClasses.some(c => c.id === classItem.id)}
+                  style={{
+                    padding: '0.8rem 1.2rem',
+                    backgroundColor: enrolledClasses.some(c => c.id === classItem.id) ? 'var(--text-muted)' : 'var(--accent-green)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: '700',
+                    cursor: enrolledClasses.some(c => c.id === classItem.id) ? 'default' : 'pointer',
+                    transition: 'all 0.3s ease',
+                    opacity: enrolledClasses.some(c => c.id === classItem.id) ? 0.6 : 1
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!enrolledClasses.some(c => c.id === classItem.id)) {
+                      e.currentTarget.style.opacity = '0.9';
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = enrolledClasses.some(c => c.id === classItem.id) ? '0.6' : '1';
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                >
+                  <i className={`fa-solid ${enrolledClasses.some(c => c.id === classItem.id) ? 'fa-check' : 'fa-plus'}`} style={{ marginRight: '0.5rem' }}></i>
+                  {enrolledClasses.some(c => c.id === classItem.id) ? 'Enrolled' : 'Enroll Now'}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* ENROLLMENT SUMMARY SECTION */}
+          {enrolledClasses.length > 0 && (
+            <div
+              style={{
+                backgroundColor: 'var(--bg-main)',
+                border: '2px solid var(--accent-green)',
+                borderRadius: '12px',
+                padding: '2rem',
+                marginTop: '2rem'
+              }}
+            >
+              <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center' }}>
+                <i className="fa-solid fa-bookmark" style={{ marginRight: '0.8rem', color: 'var(--accent-green)', fontSize: '1.4rem' }}></i>
+                Your Enrollment Summary ({enrolledClasses.length} classe{enrolledClasses.length !== 1 ? 's' : ''})
+              </h3>
+
+              <div style={{ display: 'grid', gap: '1rem', marginBottom: '1.5rem' }}>
+                {enrolledClasses.map((enrolled) => (
+                  <div
+                    key={enrolled.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '1rem',
+                      backgroundColor: 'var(--bg-card)',
+                      borderRadius: '8px',
+                      borderLeft: '4px solid var(--accent-green)'
+                    }}
+                  >
+                    <div>
+                      <h5 style={{ marginBottom: '0.3rem', fontWeight: '700' }}>{enrolled.name}</h5>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                        <i className="fa-solid fa-calendar-check" style={{ marginRight: '0.4rem' }}></i>
+                        {enrolled.time}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveEnrollment(enrolled.id)}
+                      style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: '#ff4757',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontWeight: '700',
+                        transition: 'all 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = '0.9';
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }}
+                    >
+                      <i className="fa-solid fa-trash"></i> Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => {
+                  alert(`Enrolled in ${enrolledClasses.length} classe${enrolledClasses.length !== 1 ? 's' : ''}:\n\n${enrolledClasses.map(c => c.name).join('\n')}\n\nPlease check your email for confirmation details.`);
+                  setEnrolledClasses([]);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '1rem',
+                  backgroundColor: 'var(--accent-green)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '1.1rem',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = '0.9';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                }}
+              >
+                <i className="fa-solid fa-paper-plane" style={{ marginRight: '0.8rem' }}></i>
+                Confirm & Submit Enrollments
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CareCounselingPage() {
+  const counselingHeroSlides = [
+    {
+      eyebrow: 'Talk & Thrive',
+      title: 'A calm, respectful place to talk and grow',
+      text: 'For parents, teens, women, and young adults who want guidance, encouragement, and a trusted place to be heard.',
+      image: 'https://images.unsplash.com/photo-1516549655169-df83a0774514?q=80&w=1200'
+    },
+    {
+      eyebrow: 'Emotional support',
+      title: 'Find clarity and practical next steps',
+      text: 'This space is designed to help you work through stress, life transitions, relationships, and personal challenges with dignity and confidence.',
+      image: 'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?q=80&w=1200'
+    },
+    {
+      eyebrow: 'Coaching and mentoring',
+      title: 'Support that feels direct, warm, and empowering',
+      text: 'The goal is simple: help every client feel supported, understood, and ready to move forward with practical guidance.',
+      image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=1200'
+    }
+  ];
+
+  const directMessagePoints = [
+    'If you are looking for a safe, respectful place to talk, we are here for you.',
+    'You do not have to carry stress, confusion, or emotional strain alone.',
+    'Book a session with our inhouse counselor today!'
+  ];
+
+  const serviceAreas = [
+    'Stress and overwhelm',
+    'Parenting challenges',
+    'Teen behavioral concerns',
+    'Self-esteem issues',
+    'Relationship struggles',
+    'Life transitions',
+    'Purpose and direction',
+    'Emotional wellbeing'
+  ];
+
+  const careFocusSlides = [
+    {
+      eyebrow: 'What this service is for',
+      title: 'A calm space for guidance, reassurance, and practical next steps',
+      description: 'This section brings the core message together in one place so clients can quickly understand how support works and what to expect.',
+      items: directMessagePoints,
+      badge: 'Core message'
+    },
+    {
+      eyebrow: 'Who it is for',
+      title: 'Built for parents, teens, women, and young adults',
+      description: 'We tailor our support to people navigating stress, emotional strain, and life changes who need a respectful and approachable space.',
+      items: [
+        'Parents who need guidance and emotional support.',
+        'Teenagers who need a trusted space to speak openly.',
+        'Women and young adults seeking clarity, confidence, and direction.'
+      ],
+      badge: 'Client fit'
+    },
+    {
+      eyebrow: 'What we help with',
+      title: 'Support for real challenges, not just surface concerns',
+      description: 'The focus is on practical emotional wellbeing, healthy relationships, and steady progress in everyday life.',
+      items: serviceAreas,
+      badge: 'Common focus areas'
+    }
+  ];
+
+  const sessionStructure = [
+    { label: 'Discovery Session', detail: 'A first conversation to understand the person\'s needs (30 minutes).' },
+    { label: 'Standard Counseling Session', detail: 'Listening, reflection, guidance, and action points (60 minutes).' },
+    { label: 'Follow-Up Sessions', detail: 'Progress review, accountability, and continued support.' }
+  ];
+
+  const bookingSteps = [
+    'Book a session via WhatsApp, Google Form, or the website.',
+    'Complete a confidential intake form.',
+    'Select a physical or virtual session.',
+    'Attend your session and begin the support process.'
+  ];
+
+  const [activeCounselingSlide, setActiveCounselingSlide] = useState(0);
+  const [activeCareFocusIndex, setActiveCareFocusIndex] = useState(0);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [bookingForm, setBookingForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    clientType: 'Individual',
+    sessionType: 'Virtual',
+    preferredTime: 'Any time',
+    concern: ''
+  });
+  const [bookingSubmitted, setBookingSubmitted] = useState(false);
+
+  const currentCareFocusSlide = careFocusSlides[activeCareFocusIndex];
+
+  const handleBookingSubmit = async (event) => {
+    event.preventDefault();
+
+    const message = [
+      `Client type: ${bookingForm.clientType}`,
+      `Session type: ${bookingForm.sessionType}`,
+      `Preferred time: ${bookingForm.preferredTime}`,
+      `Concern: ${bookingForm.concern}`
+    ].join(' | ');
+
+    try {
+      const { error } = await supabase.from('tribe_applicants').insert([{
+        full_name: bookingForm.name,
+        email: bookingForm.email,
+        phone: bookingForm.phone,
+        track: 'talk-thrive',
+        message
+      }]);
+
+      if (error) throw error;
+
+      setBookingSubmitted(true);
+      setBookingForm({ name: '', email: '', phone: '', clientType: 'Individual', sessionType: 'Virtual', preferredTime: 'Any time', concern: '' });
+    } catch (err) {
+      console.error('Talk & Thrive booking submission failed:', err);
+      setBookingSubmitted(false);
+      alert('We could not save your booking right now. Please try again shortly.');
+    }
+  };
+
+  useEffect(() => {
+    const counselingInterval = setInterval(() => {
+      setActiveCounselingSlide((prev) => (prev + 1) % counselingHeroSlides.length);
+    }, 9000);
+
+    return () => clearInterval(counselingInterval);
+  }, [counselingHeroSlides.length]);
+
+  useEffect(() => {
+    const careFocusInterval = setInterval(() => {
+      setActiveCareFocusIndex((prev) => (prev + 1) % careFocusSlides.length);
+    }, 9000);
+
+    return () => clearInterval(careFocusInterval);
+  }, [careFocusSlides.length]);
+
+  return (
+    <div className="public-website-container">
+      <style>{`
+        .talk-thrive-booking-backdrop {
+          position: fixed;
+          inset: 0;
+          background: linear-gradient(145deg, rgba(2, 6, 23, 0.82), rgba(15, 23, 42, 0.82));
+          backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+          z-index: 1100;
+        }
+
+        .talk-thrive-booking-card {
+          width: 100%;
+          max-width: 860px;
+          border-radius: 24px;
+          background:
+            linear-gradient(145deg, rgba(255,255,255,0.98), rgba(248,250,252,0.96));
+          border: 1px solid rgba(148, 163, 184, 0.22);
+          box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+          padding: 1.1rem;
+          max-height: 92vh;
+          overflow-y: auto;
+        }
+
+        .talk-thrive-booking-card .care-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(16, 185, 129, 0.12));
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          color: var(--text-primary);
+        }
+
+        .talk-thrive-modal-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1rem;
+        }
+
+        .talk-thrive-note-card {
+          display: grid;
+          gap: 0.35rem;
+          padding: 0.9rem;
+          border-radius: 16px;
+          background: linear-gradient(145deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+          border: 1px solid rgba(148, 163, 184, 0.24);
+        }
+
+        .talk-thrive-note-card strong {
+          color: var(--text-primary);
+          font-size: 0.92rem;
+        }
+
+        .talk-thrive-note-card span {
+          color: var(--text-muted);
+          font-size: 0.9rem;
+          line-height: 1.35;
+        }
+
+        .talk-thrive-modal-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.75rem;
+          margin-top: 0.85rem;
+        }
+
+        .talk-thrive-modal-actions button {
+          flex: 1 1 auto;
+          min-width: 180px;
+        }
+
+        @media (max-width: 768px) {
+          .talk-thrive-booking-card {
+            border-radius: 18px;
+            padding: 0.95rem;
+          }
+
+          .talk-thrive-modal-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .talk-thrive-modal-actions {
+            flex-direction: column-reverse;
+          }
+
+          .talk-thrive-modal-actions button {
+            width: 100%;
+            min-width: 0;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .talk-thrive-booking-card h3 {
+            font-size: 1.06rem;
+          }
+
+          .talk-thrive-booking-card p {
+            font-size: 0.95rem;
+          }
+
+          .talk-thrive-note-card {
+            padding: 0.75rem;
+          }
+        }
+      `}</style>
+      <section className="service-view-hero-banner" style={{ minHeight: '460px', marginTop: '0.75rem' }}>
+        <div
+          className="service-banner-bg"
+          style={{ backgroundImage: `url(${counselingHeroSlides[activeCounselingSlide].image})` }}
+        />
+        <div className="service-banner-content" key={activeCounselingSlide}>
+          <span
+            className="section-label"
+            style={{ color: '#ffffff', textTransform: 'uppercase', textShadow: '0 2px 10px rgba(0, 0, 0, 0.65)' }}
+          >
+            {counselingHeroSlides[activeCounselingSlide].eyebrow}
+          </span>
+          <h1>{counselingHeroSlides[activeCounselingSlide].title}</h1>
+          <p>{counselingHeroSlides[activeCounselingSlide].text}</p>
+          <div className="service-banner-controls">
+            <button
+              type="button"
+              className="service-banner-btn"
+              onClick={() => setActiveCounselingSlide((prev) => (prev - 1 + counselingHeroSlides.length) % counselingHeroSlides.length)}
+            >
+              <i className="fa-solid fa-chevron-left"></i>
+            </button>
+            {counselingHeroSlides.map((_, index) => (
+              <button
+                key={index}
+                type="button"
+                className={`service-banner-dot ${index === activeCounselingSlide ? 'active' : ''}`}
+                aria-label={`Show slide ${index + 1}`}
+                onClick={() => setActiveCounselingSlide(index)}
+              />
+            ))}
+            <button
+              type="button"
+              className="service-banner-btn"
+              onClick={() => setActiveCounselingSlide((prev) => (prev + 1) % counselingHeroSlides.length)}
+            >
+              <i className="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="care-counseling-section" style={{ paddingTop: '1rem' }}>
+        <div className="care-counseling-shell">
+          <div className="care-intro-block">
+            <span className="section-label">Talk & Thrive</span>
+            <h1 className="section-title-heading" style={{ marginBottom: '0.2rem' }}>Support that feels calm, confidential, and practical.</h1>
+            <p className="section-subtext" style={{ marginBottom: '0', fontSize: '1rem' }}>
+              Talk & Thrive Sessions provide a safe, confidential, and supportive space where you can freely express yourself, share your burdens and gain clarity
+            </p>
+          </div>
+
+          <div className="care-section-block">
+            <div className="care-animated-grid">
+              <article className="care-animated-box">
+                <span className="care-pill">Support</span>
+                <h3>Guidance for real-life pressure</h3>
+                <p>Our Talk & Thrive session offers a confidential and warm space to onboarding and hear our clients out.</p>
+              </article>
+              <article className="care-animated-box">
+                <span className="care-pill">Approach</span>
+                <h3>Warm, practical, and personal</h3>
+                <p>Every session is designed to help clients feel heard, encouraged, and better equipped.</p>
+              </article>
+              <article className="care-animated-box">
+                <span className="care-pill">Outcome</span>
+                <h3>Support that strengthens the whole journey</h3>
+                <p>Emotion Relief, Clarity, Practical Guidance, Renewed Confidence, Peace and a clear path forward.</p>
+              </article>
+            </div>
+          </div>
+
+          <div className="care-section-block">
+            <article className="care-counseling-card care-animated-box" style={{ borderRadius: '20px' }}>
+              <span className="care-pill">Why it matters</span>
+              <h3>Support that feels steady, confidential, personal, and practical</h3>
+              <p style={{ marginBottom: '0.95rem' }}>
+                Whether you are managing stress, family pressure, or a life transition, our counseling support is designed to help you feel heard, calm, and confident about your next step.
+              </p>
+
+              {/* <div className="why-it-matters-grid">
+                <article className="why-it-matters-card">
+                  <span className="why-it-matters-icon">01</span>
+                  <h4>Gentle guidance</h4>
+                  <p>Clear, respectful support for emotional strain, uncertainty, and everyday pressure.</p>
+                </article>
+                <article className="why-it-matters-card">
+                  <span className="why-it-matters-icon">02</span>
+                  <h4>Practical next steps</h4>
+                  <p>Tools and reflection that help you move forward with confidence and calm.</p>
+                </article>
+                <article className="why-it-matters-card">
+                  <span className="why-it-matters-icon">03</span>
+                  <h4>Client-centered care</h4>
+                  <p>A professional experience shaped around dignity, trust, and a steady path to growth.</p>
+                </article>
+              </div> */}
+            </article>
+          </div>
+
+          <div className="care-section-block">
+            <article className="care-counseling-card care-animated-box care-focus-surface" style={{ borderRadius: '20px' }}>
+              <div className="care-focus-header">
+                <div className="care-focus-copy">
+                  <span className="care-pill">{currentCareFocusSlide.badge}</span>
+                  <p className="care-focus-helper" style={{ marginBottom: '0.25rem' }}>{currentCareFocusSlide.eyebrow}</p>
+                  <h3 style={{ marginBottom: '0.45rem' }}>{currentCareFocusSlide.title}</h3>
+                  <p>{currentCareFocusSlide.description}</p>
+                </div>
+                <div className="care-focus-actions" aria-label="Focus slider controls">
+                  <button
+                    type="button"
+                    className="care-focus-btn"
+                    onClick={() => setActiveCareFocusIndex((prev) => (prev - 1 + careFocusSlides.length) % careFocusSlides.length)}
+                  >
+                    <i className="fa-solid fa-chevron-left"></i>
+                  </button>
+                  {careFocusSlides.map((slide, index) => (
+                    <button
+                      key={slide.eyebrow}
+                      type="button"
+                      className={`care-focus-dot ${index === activeCareFocusIndex ? 'active' : ''}`}
+                      aria-label={`Show ${slide.eyebrow} slide`}
+                      onClick={() => setActiveCareFocusIndex(index)}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="care-focus-btn"
+                    onClick={() => setActiveCareFocusIndex((prev) => (prev + 1) % careFocusSlides.length)}
+                  >
+                    <i className="fa-solid fa-chevron-right"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div className="care-services-strip" style={{ marginTop: '1rem' }}>
+                {currentCareFocusSlide.items.map((item, index) => (
+                  <article key={`${item}-${index}`} className="care-mini-card">
+                    {item}
+                    {item === 'Book a session with our inhouse counselor today!' && (
+                      <button
+                        type="button"
+                        className="form-submit-action-btn"
+                        style={{ width: '100%', marginTop: '0.9rem' }}
+                        onClick={() => navigate('/teens_reg')}
+                      >
+                        Book Now
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </article>
+          </div>
+
+          {isBookingModalOpen && (
+            <div
+              className="talk-thrive-booking-backdrop"
+              onClick={() => setIsBookingModalOpen(false)}
+            >
+              <article
+                className="talk-thrive-booking-card"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '0.6rem' }}>
+                  <div>
+                    <span className="care-pill">Talk & Thrive booking</span>
+                    <h3 style={{ margin: '0.35rem 0 0.35rem', fontSize: '1.35rem' }}>Request a counseling session</h3>
+                    <p style={{ margin: 0, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                      Share your details here and your request will be captured in the admin dashboard for follow-up.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsBookingModalOpen(false)}
+                    style={{
+                      border: '1px solid var(--border-color)',
+                      background: 'transparent',
+                      color: 'var(--text-primary)',
+                      borderRadius: '999px',
+                      width: '40px',
+                      height: '40px',
+                      cursor: 'pointer',
+                      fontSize: '1rem'
+                    }}
+                    aria-label="Close booking form"
+                  >
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+
+                <div className="talk-thrive-note-card" style={{ marginBottom: '1rem' }}>
+                  <strong>What happens next?</strong>
+                  <span>We capture your request in the same applicant flow used by the admin dashboard and contact you through the details you provide.</span>
+                </div>
+
+                {bookingSubmitted ? (
+                  <div className="status-feedback-banner" style={{ marginTop: '0.5rem' }}>
+                    <i className="fa-solid fa-circle-check"></i> Your booking request has been saved and sent to the admin dashboard for follow-up.
+                  </div>
+                ) : (
+                  <form onSubmit={handleBookingSubmit} className="cms-creation-form-layout" style={{ marginTop: '0.5rem' }}>
+                    <div className="talk-thrive-modal-grid">
+                      <div className="form-input-container">
+                        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Full Name</label>
+                        <input type="text" required value={bookingForm.name} onChange={(e) => setBookingForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Enter your full name" className="plain-text-input" />
+                      </div>
+                      <div className="form-input-container">
+                        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Email Address</label>
+                        <input type="email" required value={bookingForm.email} onChange={(e) => setBookingForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="you@example.com" className="plain-text-input" />
+                      </div>
+                    </div>
+
+                    <div className="talk-thrive-modal-grid">
+                      <div className="form-input-container">
+                        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Phone Number</label>
+                        <input type="tel" required value={bookingForm.phone} onChange={(e) => setBookingForm((prev) => ({ ...prev, phone: e.target.value }))} placeholder="+234..." className="plain-text-input" />
+                      </div>
+                      <div className="form-input-container">
+                        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Client Type</label>
+                        <CustomDropdown value={bookingForm.clientType} onChange={(value) => setBookingForm((prev) => ({ ...prev, clientType: value }))} ariaLabel="Client type" options={[{ value: 'Individual', label: 'Individual' }, { value: 'Parent', label: 'Parent / Guardian' }, { value: 'Teen', label: 'Teen' }, { value: 'Woman', label: 'Woman / Young Adult' }]} />
+                      </div>
+                    </div>
+
+                    <div className="talk-thrive-modal-grid">
+                      <div className="form-input-container">
+                        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Session Type</label>
+                        <CustomDropdown value={bookingForm.sessionType} onChange={(value) => setBookingForm((prev) => ({ ...prev, sessionType: value }))} ariaLabel="Session type" options={[{ value: 'Virtual', label: 'Virtual' }, { value: 'In-person', label: 'In-person' }, { value: 'Hybrid', label: 'Hybrid' }]} />
+                      </div>
+                      <div className="form-input-container">
+                        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Preferred Time</label>
+                        <CustomDropdown value={bookingForm.preferredTime} onChange={(value) => setBookingForm((prev) => ({ ...prev, preferredTime: value }))} ariaLabel="Preferred time" options={['Any time', 'Morning', 'Afternoon', 'Evening'].map((value) => ({ value, label: value }))} />
+                      </div>
+                    </div>
+
+                    <div className="form-input-container">
+                      <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>What would you like support with?</label>
+                      <textarea rows="5" required value={bookingForm.concern} onChange={(e) => setBookingForm((prev) => ({ ...prev, concern: e.target.value }))} placeholder="Share a brief overview of your needs, goals, or concerns." className="plain-text-input" style={{ resize: 'vertical' }} />
+                    </div>
+
+                    <div className="talk-thrive-modal-actions">
+                      <button type="submit" className="form-submit-action-btn" disabled={bookingSubmitting} style={{ minWidth: '220px' }}>
+                        <i className={`fa-solid ${bookingSubmitting ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i> {bookingSubmitting ? 'Submitting...' : 'Send Booking Request'}
+                      </button>
+                      <button type="button" onClick={() => setIsBookingModalOpen(false)} className="care-focus-btn" style={{ background: 'transparent' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </article>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// =========================================================================
+// HOMEPAGE CLIENT REGISTRATION INTAKE COMPONENT
+// =========================================================================
+function HomeIntakeForm({ onSubmitApplicant }) {
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [emailAddress, setEmailAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [track, setTrack] = useState('family');
+  const [message, setMessage] = useState('');
+
+  const submitForm = async (e) => {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      if (onSubmitApplicant) await onSubmitApplicant({ fullName, email: emailAddress, phone, track, message });
+      setSubmitted(true);
+      setFullName(''); setEmailAddress(''); setPhone(''); setTrack('family'); setMessage('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="status-feedback-banner">
+        <i className="fa-solid fa-circle-check"></i> Registration transmitted into core dashboard hub! Our alignment mentors will follow up with your email account coordinates immediately.
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submitForm} className="cms-creation-form-layout" style={{ marginTop: 0 }}>
+      <div className="registration-fields-grid">
+        <div className="form-input-container">
+          <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Your Full Name</label>
+          <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required placeholder="Enter name" className="plain-text-input" />
+        </div>
+        <div className="form-input-container">
+          <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Contact Email Address</label>
+          <input type="email" value={emailAddress} onChange={(e) => setEmailAddress(e.target.value)} required placeholder="name@domain.com" className="plain-text-input" />
+        </div>
+      </div>
+
+      <div className="registration-fields-grid">
+        <div className="form-input-container">
+          <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Mobile Phone Line</label>
+          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="+234..." className="plain-text-input" />
+        </div>
+        <div className="form-input-container">
+          <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Targeted Intake Track Selection</label>
+          <CustomDropdown value={track} onChange={setTrack} ariaLabel="Intake track" options={[{ value: 'family', label: 'Thriving Parents' }, { value: 'marriage', label: 'Thriving Women' }, { value: 'children', label: 'Thriving Pre-teen & Teens' }]} />
+        </div>
+      </div>
+
+      <div className="form-input-container">
+        <label style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)' }}>Tell us briefly about your goal</label>
+        <textarea rows="3" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="What are you hoping to achieve?" className="plain-text-input" style={{ resize: 'vertical' }} />
+      </div>
+
+      <button type="submit" className="form-submit-action-btn" disabled={submitting}>
+        <i className={`fa-solid ${submitting ? 'fa-spinner fa-spin' : 'fa-user-plus'}`}></i> {submitting ? 'Submitting...' : 'Submit Secure Registration'}
+      </button>
+    </form>
+  );
+}

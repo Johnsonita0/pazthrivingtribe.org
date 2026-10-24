@@ -1,0 +1,1632 @@
+-- Run this in the Supabase SQL editor.
+-- Required for gen_random_uuid() used in the admin table.
+create extension if not exists pgcrypto;
+
+-- ==========================================================
+-- Public storage bucket for admin proof uploads / previews
+-- ==========================================================
+-- Bucket name is intentionally fixed and public so uploaded files can
+-- always be previewed through the public URL without requiring auth.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('prof-upload', 'prof-upload', true, 5242880, ARRAY['image/png','image/jpeg','image/jpg','image/webp','application/pdf'])
+on conflict (id) do update
+set public = true,
+    file_size_limit = 5242880,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('product-files', 'product-files', false, 52428800, ARRAY['application/pdf','application/zip','application/octet-stream','image/png','image/jpeg','image/webp'])
+on conflict (id) do update
+set public = false,
+    file_size_limit = 52428800,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'public preview for prof upload files'
+  ) THEN
+    EXECUTE 'CREATE POLICY "public preview for prof upload files" ON storage.objects FOR SELECT USING (bucket_id = ''prof-upload'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated upload to prof upload bucket'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated upload to prof upload bucket" ON storage.objects FOR INSERT WITH CHECK (bucket_id = ''prof-upload'' AND auth.role() = ''authenticated'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'guest upload payment proof files'
+  ) THEN
+    EXECUTE 'CREATE POLICY "guest upload payment proof files" ON storage.objects FOR INSERT WITH CHECK (bucket_id = ''prof-upload'' AND (storage.foldername(name))[1] = ''orders'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated update to prof upload bucket'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated update to prof upload bucket" ON storage.objects FOR UPDATE USING (bucket_id = ''prof-upload'' AND auth.role() = ''authenticated'') WITH CHECK (bucket_id = ''prof-upload'' AND auth.role() = ''authenticated'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated delete from prof upload bucket'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated delete from prof upload bucket" ON storage.objects FOR DELETE USING (bucket_id = ''prof-upload'' AND auth.role() = ''authenticated'');';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated upload product files'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated upload product files" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = ''product-files'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated update product files'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated update product files" ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = ''product-files'') WITH CHECK (bucket_id = ''product-files'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated read product files'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated read product files" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = ''product-files'');';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'authenticated delete product files'
+  ) THEN
+    EXECUTE 'CREATE POLICY "authenticated delete product files" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = ''product-files'');';
+  END IF;
+END
+$$;
+
+create or replace function public.prof_upload_object_url(file_path text)
+returns text
+language sql
+stable
+as $$
+  select case
+    when file_path is null or trim(file_path) = '' then null
+    else '/storage/v1/object/public/prof-upload/' || file_path
+  end;
+$$;
+
+-- E-commerce tables needed by the storefront and admin dashboard
+create table if not exists store_products (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  price numeric(12,2) default 0,
+  category text,
+  cover text,
+  file_url text,
+  currency text default 'NGN',
+  vendor_type text not null default 'books' check (vendor_type in ('books', 'groceries', 'gadgets')),
+  is_free boolean default false,
+  rating numeric(3,2) default 0,
+  reviews integer default 0,
+  in_stock boolean default true,
+  stock_count integer default 0,
+  stock_unit text,
+  expiry_date date,
+  brand text,
+  model text,
+  condition text,
+  warranty_period text,
+  release_enabled boolean not null default false,
+  release_at timestamptz,
+  close_at timestamptz,
+  allow_after_close boolean not null default false,
+  prime boolean default false,
+  status text not null default 'in_review' check (status in ('pending', 'in_review', 'approved', 'rejected', 'published')),
+  name_verified boolean not null default false,
+  name_verified_at timestamptz,
+  name_verified_by uuid references auth.users(id),
+  description_verified boolean not null default false,
+  cover_verified boolean not null default false,
+  attachment_verified boolean not null default false,
+  amount_verified boolean not null default false,
+  published_at timestamptz,
+  published_by uuid references auth.users(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists tribe_bookings add column if not exists payment_reference text;
+alter table if exists tribe_bookings add column if not exists payment_status text;
+alter table if exists tribe_testimonials add column if not exists status text not null default 'published';
+update tribe_testimonials set status = 'published' where status is null;
+
+-- Keep existing projects compatible when this setup script is run after the table exists.
+alter table if exists store_products add column if not exists title text;
+alter table if exists store_products add column if not exists description text;
+alter table if exists store_products add column if not exists price numeric(12,2) default 0;
+alter table if exists store_products add column if not exists category text;
+alter table if exists store_products add column if not exists cover text;
+alter table if exists store_products add column if not exists file_url text;
+alter table if exists store_products add column if not exists currency text default 'NGN';
+alter table if exists store_products add column if not exists vendor_type text not null default 'books';
+alter table if exists store_products drop constraint if exists store_products_vendor_type_check;
+alter table if exists store_products add constraint store_products_vendor_type_check check (vendor_type in ('books', 'groceries', 'gadgets'));
+alter table if exists store_products add column if not exists is_free boolean default false;
+alter table if exists store_products add column if not exists rating numeric(3,2) default 0;
+alter table if exists store_products add column if not exists reviews integer default 0;
+alter table if exists store_products add column if not exists in_stock boolean default true;
+alter table if exists store_products add column if not exists stock_count integer default 0;
+alter table if exists store_products add column if not exists stock_unit text;
+alter table if exists store_products add column if not exists expiry_date date;
+alter table if exists store_products add column if not exists brand text;
+alter table if exists store_products add column if not exists model text;
+alter table if exists store_products add column if not exists condition text;
+alter table if exists store_products add column if not exists warranty_period text;
+alter table if exists store_products add column if not exists release_enabled boolean not null default false;
+alter table if exists store_products add column if not exists release_at timestamptz;
+alter table if exists store_products add column if not exists close_at timestamptz;
+alter table if exists store_products add column if not exists allow_after_close boolean not null default false;
+alter table if exists store_products add column if not exists prime boolean default false;
+alter table if exists store_products add column if not exists status text not null default 'approved';
+alter table if exists store_products add column if not exists name_verified boolean not null default false;
+alter table if exists store_products add column if not exists name_verified_at timestamptz;
+alter table if exists store_products add column if not exists name_verified_by uuid references auth.users(id);
+alter table if exists store_products add column if not exists description_verified boolean not null default false;
+alter table if exists store_products add column if not exists cover_verified boolean not null default false;
+alter table if exists store_products add column if not exists attachment_verified boolean not null default false;
+alter table if exists store_products add column if not exists amount_verified boolean not null default false;
+alter table if exists store_products add column if not exists published_at timestamptz;
+alter table if exists store_products add column if not exists published_by uuid references auth.users(id);
+alter table if exists store_products drop constraint if exists store_products_status_check;
+alter table if exists store_products add constraint store_products_status_check check (status in ('pending', 'in_review', 'approved', 'rejected', 'published'));
+alter table if exists store_products add column if not exists created_at timestamptz default now();
+alter table if exists store_products add column if not exists updated_at timestamptz default now();
+
+create table if not exists store_bank_accounts (
+  id uuid primary key default gen_random_uuid(),
+  bank_name text,
+  account_name text,
+  account_number text,
+  account_type text,
+  swift_code text,
+  note text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists shop_orders (
+  id uuid primary key default gen_random_uuid(),
+  order_number text unique not null,
+  customer_id uuid references auth.users(id) on delete set null,
+  customer_name text,
+  email text,
+  phone text,
+  subtotal numeric(12,2) default 0,
+  total numeric(12,2) default 0,
+  currency text,
+  notes text,
+  status text default 'pending',
+  payment_proof_path text,
+  payment_proof_url text,
+  payment_reference text,
+  payment_mode text default 'live',
+  delivery_address jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists shop_orders add column if not exists payment_mode text default 'live';
+alter table if exists shop_orders add column if not exists currency text;
+alter table public.shop_orders add column if not exists customer_id uuid references auth.users(id) on delete set null;
+alter table public.shop_orders add column if not exists delivery_address jsonb;
+
+create table if not exists shop_order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid references shop_orders(id) on delete cascade,
+  product_id text,
+  title text,
+  price numeric(12,2) default 0,
+  quantity integer default 1,
+  created_at timestamptz default now()
+);
+
+create table if not exists customer_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  first_name text,
+  last_name text,
+  full_name text,
+  phone text,
+  delivery_address jsonb,
+  country_code text not null default 'NG',
+  language text not null default 'English',
+  currency text not null default 'NGN',
+  notifications_enabled boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.customer_profiles add column if not exists country_code text not null default 'NG';
+alter table public.customer_profiles add column if not exists language text not null default 'English';
+alter table public.customer_profiles add column if not exists currency text not null default 'NGN';
+alter table public.customer_profiles add column if not exists notifications_enabled boolean not null default false;
+alter table public.customer_profiles add column if not exists email text;
+alter table public.customer_profiles add column if not exists first_name text;
+alter table public.customer_profiles add column if not exists last_name text;
+alter table public.customer_profiles add column if not exists full_name text;
+alter table public.customer_profiles add column if not exists avatar_url text;
+alter table public.customer_profiles add column if not exists phone text;
+alter table public.customer_profiles add column if not exists delivery_address jsonb;
+alter table public.customer_profiles add column if not exists created_at timestamptz not null default now();
+alter table public.customer_profiles add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists product_release_notifications (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references store_products(id) on delete cascade,
+  product_title text not null,
+  email text not null,
+  customer_name text not null,
+  phone text,
+  release_at timestamptz not null,
+  next_notification_at timestamptz,
+  notification_count integer not null default 0 check (notification_count between 0 and 3),
+  status text not null default 'active' check (status in ('active', 'purchased', 'completed')),
+  admin_notification_sent_at timestamptz,
+  admin_notification_claimed_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (product_id, email)
+);
+
+alter table if exists product_release_notifications add column if not exists admin_notification_sent_at timestamptz;
+alter table if exists product_release_notifications add column if not exists admin_notification_claimed_at timestamptz;
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+alter table if exists product_release_notifications enable row level security;
+revoke all on public.product_release_notifications from anon, authenticated;
+grant all on public.product_release_notifications to service_role;
+create index if not exists idx_product_release_notifications_due
+  on product_release_notifications(status, next_notification_at)
+  where status = 'active';
+
+select cron.unschedule(jobid)
+from cron.job
+where jobname = 'paz-release-notifications';
+
+select cron.schedule(
+  'paz-release-notifications',
+  '* * * * *',
+  $$
+    select net.http_get(
+      url := (
+        select decrypted_secret
+        from vault.decrypted_secrets
+        where name = 'paz_release_notification_url'
+        limit 1
+      ),
+      headers := jsonb_build_object(
+        'Authorization',
+        'Bearer ' || (
+          select decrypted_secret
+          from vault.decrypted_secrets
+          where name = 'paz_release_notification_secret'
+          limit 1
+        )
+      ),
+      timeout_milliseconds := 10000
+    );
+  $$
+);
+
+-- Vendor marketplace foundation. Vendors remain pending until a main admin approves
+-- their identity document and payout details.
+create table if not exists vendor_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  company_name text not null,
+  logo_url text,
+  contact_email text,
+  id_type text not null,
+  id_document_path text not null,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'suspended')),
+  payout_account_name text,
+  payout_account_number text,
+  payout_bank_name text,
+  payout_currency text default 'NGN',
+  rejection_reason text,
+  approved_at timestamptz,
+  approved_by uuid references auth.users(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists vendor_profiles add column if not exists phone text;
+alter table if exists vendor_profiles add column if not exists username text;
+alter table if exists vendor_profiles add column if not exists vendor_type text not null default 'books';
+alter table if exists vendor_profiles drop constraint if exists vendor_profiles_vendor_type_check;
+alter table if exists vendor_profiles add constraint vendor_profiles_vendor_type_check check (vendor_type in ('books', 'groceries', 'gadgets'));
+alter table if exists vendor_profiles add column if not exists payout_accounts jsonb not null default '[]'::jsonb;
+alter table if exists vendor_profiles add column if not exists selected_payout_account_id text;
+alter table if exists vendor_profiles add column if not exists vendor_terms_version text;
+alter table if exists vendor_profiles add column if not exists vendor_terms_accepted_at timestamptz;
+alter table if exists vendor_profiles add column if not exists vendor_pin_hash text;
+alter table if exists vendor_profiles alter column id_type drop not null;
+alter table if exists vendor_profiles alter column id_document_path drop not null;
+create unique index if not exists vendor_profiles_username_unique on vendor_profiles (lower(username)) where username is not null;
+create unique index if not exists vendor_profiles_email_unique on vendor_profiles (lower(contact_email)) where contact_email is not null;
+create unique index if not exists vendor_profiles_company_name_unique on vendor_profiles (lower(company_name));
+
+create or replace function public.check_vendor_identity_availability(
+  p_username text,
+  p_email text,
+  p_company_name text
+)
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'username_taken', exists(select 1 from public.vendor_profiles where lower(username) = lower(trim(p_username))),
+    'email_taken', exists(select 1 from public.vendor_profiles where lower(contact_email) = lower(trim(p_email))),
+    'company_name_taken', exists(select 1 from public.vendor_profiles where lower(company_name) = lower(trim(p_company_name)))
+  );
+$$;
+
+grant execute on function public.check_vendor_identity_availability(text, text, text) to anon, authenticated;
+
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.vendor_pin_is_set()
+returns boolean
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+  select exists(
+    select 1
+    from public.vendor_profiles
+    where id = auth.uid()
+      and vendor_pin_hash is not null
+  );
+$$;
+
+create or replace function public.set_vendor_pin(p_pin text)
+returns boolean
+language plpgsql
+security invoker
+set search_path = public, extensions
+as $$
+begin
+  if p_pin !~ '^\d{4}$' then
+    raise exception 'Vendor PIN must contain exactly 4 digits';
+  end if;
+
+  update public.vendor_profiles
+  set vendor_pin_hash = encode(digest(p_pin, 'sha256'), 'hex'),
+      updated_at = now()
+  where id = auth.uid()
+    and vendor_pin_hash is null;
+
+  return found;
+end;
+$$;
+
+create or replace function public.verify_vendor_pin(p_pin text)
+returns boolean
+language sql
+security invoker
+set search_path = public, extensions
+as $$
+  select exists(
+    select 1
+    from public.vendor_profiles
+    where id = auth.uid()
+      and vendor_pin_hash = encode(digest(p_pin, 'sha256'), 'hex')
+  );
+$$;
+
+create or replace function public.clear_vendor_pin()
+returns boolean
+language sql
+security invoker
+set search_path = public
+as $$
+  update public.vendor_profiles
+  set vendor_pin_hash = null,
+      updated_at = now()
+  where id = auth.uid()
+  returning true;
+$$;
+
+grant execute on function public.vendor_pin_is_set() to authenticated;
+grant execute on function public.set_vendor_pin(text) to authenticated;
+grant execute on function public.verify_vendor_pin(text) to authenticated;
+grant execute on function public.clear_vendor_pin() to authenticated;
+
+alter table if exists store_products add column if not exists vendor_id uuid references vendor_profiles(id) on delete set null;
+alter table if exists store_products add column if not exists vendor_name text;
+
+create table if not exists vendor_sales (
+  id uuid primary key default gen_random_uuid(),
+  vendor_id uuid not null references vendor_profiles(id) on delete cascade,
+  order_number text not null,
+  product_id text,
+  product_title text,
+  quantity integer not null default 1,
+  gross_amount numeric(12,2) not null default 0,
+  platform_fee numeric(12,2) not null default 0,
+  vendor_amount numeric(12,2) not null default 0,
+  currency text not null default 'NGN',
+  payout_status text not null default 'pending' check (payout_status in ('pending', 'approved', 'paid', 'held')),
+  payout_reference text,
+  paid_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create table if not exists product_ratings (
+  id uuid primary key default gen_random_uuid(),
+  product_id text not null,
+  reviewer_name text not null,
+  reviewer_email text,
+  rating integer not null check (rating between 1 and 5),
+  comment text,
+  created_at timestamptz default now()
+);
+
+create table if not exists vendor_ratings (
+  id uuid primary key default gen_random_uuid(),
+  vendor_id uuid not null references vendor_profiles(id) on delete cascade,
+  reviewer_name text not null,
+  reviewer_email text,
+  rating integer not null check (rating between 1 and 5),
+  comment text,
+  created_at timestamptz default now()
+);
+
+create table if not exists vendor_support_messages (
+  id uuid primary key default gen_random_uuid(),
+  vendor_id uuid references vendor_profiles(id) on delete set null,
+  sender_email text,
+  message text not null,
+  status text not null default 'open' check (status in ('open', 'in_progress', 'closed')),
+  admin_reply text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists customer_support_messages (
+  id uuid primary key default gen_random_uuid(),
+  sender_name text not null,
+  sender_email text not null,
+  message text not null,
+  status text not null default 'open' check (status in ('open', 'in_progress', 'closed')),
+  admin_reply text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists promotional_ads (
+  id uuid primary key default gen_random_uuid(),
+  headline text not null,
+  eyebrow text,
+  product_url text,
+  action_label text default 'View product',
+  posted_by uuid references auth.users(id) on delete set null,
+  posted_by_email text,
+  vendor_id uuid references vendor_profiles(id) on delete set null,
+  vendor_name text,
+  is_platform_ad boolean not null default false,
+  status text not null default 'published' check (status in ('draft', 'published', 'archived')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists promotional_ads add column if not exists vendor_name text;
+alter table if exists promotional_ads add column if not exists posted_by_email text;
+alter table if exists promotional_ads add column if not exists is_platform_ad boolean not null default false;
+alter table if exists promotional_ads drop constraint if exists promotional_ads_status_check;
+alter table if exists promotional_ads add constraint promotional_ads_status_check check (status in ('draft', 'pending', 'approved', 'published', 'publish_requested', 'unpublish_requested', 'rejected', 'archived'));
+
+insert into public.promotional_ads (eyebrow, headline, product_url, action_label, posted_by_email, is_platform_ad, status)
+select 'PAZ Marketplace', 'Your work belongs in the PAZ Marketplace', '/vendor', 'Become a vendor', 'PAZ Thriving Tribe', true, 'published'
+where not exists (select 1 from public.promotional_ads where is_platform_ad = true and headline = 'Your work belongs in the PAZ Marketplace');
+
+insert into public.promotional_ads (eyebrow, headline, product_url, action_label, posted_by_email, is_platform_ad, status)
+select 'Creator opportunity', 'Turn your knowledge into a growing storefront', '/vendor', 'Become a vendor', 'PAZ Thriving Tribe', true, 'published'
+where not exists (select 1 from public.promotional_ads where is_platform_ad = true and headline = 'Turn your knowledge into a growing storefront');
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('vendor-verification', 'vendor-verification', false, 10485760, ARRAY['image/png','image/jpeg','image/jpg','image/webp','application/pdf'])
+on conflict (id) do update set public = false, file_size_limit = 10485760, allowed_mime_types = excluded.allowed_mime_types;
+
+alter table if exists vendor_profiles enable row level security;
+alter table if exists vendor_sales enable row level security;
+alter table if exists product_ratings enable row level security;
+alter table if exists vendor_ratings enable row level security;
+alter table if exists vendor_support_messages enable row level security;
+alter table if exists customer_support_messages enable row level security;
+alter table if exists promotional_ads enable row level security;
+drop policy if exists "public read published ads" on public.promotional_ads;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_profiles' AND policyname = 'vendors manage own profile') THEN
+    EXECUTE 'CREATE POLICY "vendors manage own profile" ON public.vendor_profiles FOR ALL TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid())';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_profiles' AND policyname = 'public read approved vendors') THEN
+    EXECUTE 'CREATE POLICY "public read approved vendors" ON public.vendor_profiles FOR SELECT USING (status = ''approved'')';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_sales' AND policyname = 'vendors read own sales') THEN
+    EXECUTE 'CREATE POLICY "vendors read own sales" ON public.vendor_sales FOR SELECT TO authenticated USING (vendor_id = auth.uid())';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_ratings' AND policyname = 'public read product ratings') THEN
+    EXECUTE 'CREATE POLICY "public read product ratings" ON public.product_ratings FOR SELECT USING (true)';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'product_ratings' AND policyname = 'public submit product ratings') THEN
+    EXECUTE 'CREATE POLICY "public submit product ratings" ON public.product_ratings FOR INSERT WITH CHECK (rating between 1 and 5)';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_ratings' AND policyname = 'public read vendor ratings') THEN
+    EXECUTE 'CREATE POLICY "public read vendor ratings" ON public.vendor_ratings FOR SELECT USING (true)';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_ratings' AND policyname = 'public submit vendor ratings') THEN
+    EXECUTE 'CREATE POLICY "public submit vendor ratings" ON public.vendor_ratings FOR INSERT WITH CHECK (rating between 1 and 5)';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_support_messages' AND policyname = 'vendors read own support messages') THEN
+    EXECUTE 'CREATE POLICY "vendors read own support messages" ON public.vendor_support_messages FOR SELECT TO authenticated USING (vendor_id = auth.uid())';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'promotional_ads' AND policyname = 'public read published ads') THEN
+    EXECUTE 'CREATE POLICY "public read published ads" ON public.promotional_ads FOR SELECT USING (status in (''approved'', ''published''))';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'promotional_ads' AND policyname = 'approved vendors submit ads') THEN
+    EXECUTE 'CREATE POLICY "approved vendors submit ads" ON public.promotional_ads FOR INSERT TO authenticated WITH CHECK (vendor_id = auth.uid() AND posted_by = auth.uid() AND EXISTS (SELECT 1 FROM public.vendor_profiles WHERE id = auth.uid() AND status = ''approved''))';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'promotional_ads' AND policyname = 'vendors read own ads') THEN
+    EXECUTE 'CREATE POLICY "vendors read own ads" ON public.promotional_ads FOR SELECT TO authenticated USING (vendor_id = auth.uid())';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'promotional_ads' AND policyname = 'vendors request ad unpublish') THEN
+    EXECUTE 'CREATE POLICY "vendors request ad unpublish" ON public.promotional_ads FOR UPDATE TO authenticated USING (vendor_id = auth.uid() AND status in (''approved'', ''published'')) WITH CHECK (vendor_id = auth.uid() AND status = ''unpublish_requested'')';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'promotional_ads' AND policyname = 'vendors request ad publish') THEN
+    EXECUTE 'CREATE POLICY "vendors request ad publish" ON public.promotional_ads FOR UPDATE TO authenticated USING (vendor_id = auth.uid() AND status = ''archived'') WITH CHECK (vendor_id = auth.uid() AND status = ''publish_requested'')';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'promotional_ads' AND policyname = 'admins manage promotional ads') THEN
+    EXECUTE 'CREATE POLICY "admins manage promotional ads" ON public.promotional_ads FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM public.site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt() ->> ''email''))) WITH CHECK (EXISTS (SELECT 1 FROM public.site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt() ->> ''email'')))';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'vendors upload own verification documents') THEN
+    EXECUTE 'CREATE POLICY "vendors upload own verification documents" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = ''vendor-verification'' AND (storage.foldername(name))[1] = ''vendors'' AND (storage.foldername(name))[2] = auth.uid()::text)';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'vendors read own verification documents') THEN
+    EXECUTE 'CREATE POLICY "vendors read own verification documents" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = ''vendor-verification'' AND (storage.foldername(name))[1] = ''vendors'' AND (storage.foldername(name))[2] = auth.uid()::text)';
+  END IF;
+END
+$$;
+
+alter table if exists store_products enable row level security;
+alter table if exists store_bank_accounts enable row level security;
+alter table if exists shop_orders enable row level security;
+alter table if exists shop_order_items enable row level security;
+
+DO $$
+BEGIN
+  EXECUTE 'DROP POLICY IF EXISTS "allow public read storefront" ON public.store_products;';
+  EXECUTE 'CREATE POLICY "allow public read storefront" ON public.store_products FOR SELECT USING (status = ''published'' OR (vendor_id IS NULL AND status = ''approved'') OR vendor_id = auth.uid());';
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'store_bank_accounts' AND policyname = 'allow public read bank accounts'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public read bank accounts" ON public.store_bank_accounts FOR SELECT USING (true);';
+  END IF;
+
+  EXECUTE 'DROP POLICY IF EXISTS "allow public read shop orders" ON public.shop_orders;';
+  EXECUTE 'DROP POLICY IF EXISTS "allow public read order items" ON public.shop_order_items;';
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'store_products' AND policyname = 'allow public insert store products'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert store products" ON public.store_products FOR INSERT WITH CHECK (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'store_bank_accounts' AND policyname = 'allow public insert bank accounts'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert bank accounts" ON public.store_bank_accounts FOR INSERT WITH CHECK (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'shop_orders' AND policyname = 'allow public insert shop orders'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert shop orders" ON public.shop_orders FOR INSERT WITH CHECK (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'shop_orders' AND policyname = 'allow public update payment proof'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public update payment proof" ON public.shop_orders FOR UPDATE USING (true) WITH CHECK (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'shop_order_items' AND policyname = 'allow public insert order items'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert order items" ON public.shop_order_items FOR INSERT WITH CHECK (true);';
+  END IF;
+
+  EXECUTE 'DROP POLICY IF EXISTS "allow authenticated update store products" ON public.store_products;';
+  EXECUTE 'CREATE POLICY "allow authenticated update store products" ON public.store_products FOR UPDATE TO authenticated USING (vendor_id = auth.uid() AND status <> ''published'') WITH CHECK (vendor_id = auth.uid() AND status IN (''in_review'', ''pending'', ''approved'', ''rejected''));';
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'store_bank_accounts' AND policyname = 'allow authenticated update bank accounts'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow authenticated update bank accounts" ON public.store_bank_accounts FOR UPDATE USING (auth.role() = ''authenticated'') WITH CHECK (auth.role() = ''authenticated'');';
+  END IF;
+
+  EXECUTE 'DROP POLICY IF EXISTS "allow authenticated delete store products" ON public.store_products;';
+  EXECUTE 'CREATE POLICY "allow authenticated delete store products" ON public.store_products FOR DELETE TO authenticated USING (vendor_id = auth.uid());';
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'store_bank_accounts' AND policyname = 'allow authenticated delete bank accounts'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow authenticated delete bank accounts" ON public.store_bank_accounts FOR DELETE USING (auth.role() = ''authenticated'');';
+  END IF;
+END
+$$;
+
+-- Replace the legacy open product-insert policy with an approved-vendor policy.
+DROP POLICY IF EXISTS "allow public insert store products" ON public.store_products;
+DROP POLICY IF EXISTS "approved vendors insert own products" ON public.store_products;
+CREATE POLICY "approved vendors insert own products" ON public.store_products
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    vendor_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.vendor_profiles
+      WHERE vendor_profiles.id = auth.uid()
+        AND vendor_profiles.status = 'approved'
+    )
+  );
+
+create index if not exists idx_store_products_category on store_products(category);
+create index if not exists idx_shop_orders_order_number on shop_orders(order_number);
+create index if not exists idx_shop_order_items_order_id on shop_order_items(order_id);
+
+create or replace function public.get_shop_order_with_items(p_order_id uuid)
+returns table (
+  order_id uuid,
+  order_number text,
+  customer_name text,
+  email text,
+  phone text,
+  subtotal numeric,
+  total numeric,
+  status text,
+  payment_proof_path text,
+  payment_proof_url text,
+  order_items jsonb
+)
+language plpgsql
+as $$
+begin
+  return query
+  with order_row as (
+    select *
+    from shop_orders
+    where id = p_order_id
+  )
+  select
+    o.id,
+    o.order_number,
+    o.customer_name,
+    o.email,
+    o.phone,
+    o.subtotal,
+    o.total,
+    o.status,
+    o.payment_proof_path,
+    o.payment_proof_url,
+    coalesce(jsonb_agg(jsonb_build_object(
+      'product_id', i.product_id,
+      'title', i.title,
+      'price', i.price,
+      'quantity', i.quantity
+    ) order by i.created_at) filter (where i.id is not null), '[]'::jsonb)
+  from order_row o
+  left join shop_order_items i on i.order_id = o.id
+  group by o.id, o.order_number, o.customer_name, o.email, o.phone, o.subtotal, o.total, o.status, o.payment_proof_path, o.payment_proof_url;
+end;
+$$;
+
+-- Create a table to register trusted site admins.
+create table if not exists site_admins (
+  id uuid primary key default gen_random_uuid(),
+  uid text unique,
+  email text unique not null,
+  created_at timestamp with time zone default now()
+);
+
+-- Trusted admin account for the live site.
+insert into site_admins (email, uid)
+values ('pazthrivingtribe@gmail.com', '44787dbc-03ba-475e-9d5c-86ba765d5b0a')
+on conflict (email) do update
+set uid = excluded.uid;
+
+alter table public.customer_profiles enable row level security;
+alter table public.shop_orders enable row level security;
+alter table public.shop_order_items enable row level security;
+
+do $$
+declare
+  old_policy record;
+begin
+  for old_policy in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('customer_profiles', 'shop_orders', 'shop_order_items')
+      and cmd in ('SELECT', 'ALL')
+  loop
+    execute format('drop policy %I on %I.%I', old_policy.policyname, old_policy.schemaname, old_policy.tablename);
+  end loop;
+end
+$$;
+
+create or replace function public.is_confirmed_shop_customer(customer_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from auth.users as account
+    where account.id = auth.uid()
+      and account.email_confirmed_at is not null
+      and lower(account.email) = lower(customer_email)
+  );
+$$;
+
+revoke all on function public.is_confirmed_shop_customer(text) from public;
+grant execute on function public.is_confirmed_shop_customer(text) to authenticated;
+
+drop policy if exists customer_profiles_select_own on public.customer_profiles;
+drop policy if exists customer_profiles_insert_own on public.customer_profiles;
+drop policy if exists customer_profiles_update_own on public.customer_profiles;
+create policy customer_profiles_select_own
+  on public.customer_profiles for select to authenticated
+  using (id = auth.uid());
+create policy customer_profiles_insert_own
+  on public.customer_profiles for insert to authenticated
+  with check (id = auth.uid());
+create policy customer_profiles_update_own
+  on public.customer_profiles for update to authenticated
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+create policy shop_orders_select_customer_or_admin
+  on public.shop_orders for select to authenticated
+  using (
+    public.is_confirmed_shop_customer(email)
+    or exists (
+      select 1 from public.site_admins
+      where uid = auth.uid()::text
+        or lower(email) = lower(auth.jwt() ->> 'email')
+    )
+  );
+
+create policy shop_order_items_select_customer_or_admin
+  on public.shop_order_items for select to authenticated
+  using (
+    exists (
+      select 1
+      from public.shop_orders as customer_order
+      where customer_order.id = shop_order_items.order_id
+        and (
+          public.is_confirmed_shop_customer(customer_order.email)
+          or exists (
+            select 1 from public.site_admins
+            where uid = auth.uid()::text
+              or lower(email) = lower(auth.jwt() ->> 'email')
+          )
+        )
+    )
+  );
+
+grant select, insert, update on public.customer_profiles to authenticated;
+grant select on public.shop_orders, public.shop_order_items to authenticated;
+
+create table if not exists public.customer_notifications (
+  id uuid primary key default gen_random_uuid(),
+  recipient_id uuid not null references auth.users(id) on delete cascade,
+  sender_id uuid references auth.users(id) on delete set null,
+  title text not null check (length(trim(title)) between 1 and 180),
+  message text not null check (length(trim(message)) between 1 and 5000),
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+create index if not exists customer_notifications_recipient_created_idx
+  on public.customer_notifications(recipient_id, created_at desc);
+create index if not exists customer_notifications_unread_idx
+  on public.customer_notifications(recipient_id)
+  where read_at is null;
+alter table public.customer_notifications enable row level security;
+drop policy if exists customer_notifications_select_own on public.customer_notifications;
+drop policy if exists customer_notifications_update_own on public.customer_notifications;
+create policy customer_notifications_select_own
+  on public.customer_notifications for select to authenticated
+  using (recipient_id = auth.uid());
+create policy customer_notifications_update_own
+  on public.customer_notifications for update to authenticated
+  using (recipient_id = auth.uid())
+  with check (recipient_id = auth.uid());
+revoke all on public.customer_notifications from public, anon, authenticated;
+grant select on public.customer_notifications to authenticated;
+grant update (read_at) on public.customer_notifications to authenticated;
+grant all on public.customer_notifications to service_role;
+
+-- Keep vendor identity documents private while allowing trusted admins to preview them.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'admins read vendor verification documents'
+  ) THEN
+    EXECUTE 'CREATE POLICY "admins read vendor verification documents" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = ''vendor-verification'' AND EXISTS (SELECT 1 FROM public.site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt() ->> ''email'')))';
+  END IF;
+END
+$$;
+
+-- Optional: if you want to allow public applicant inserts and block direct edits.
+alter table if exists tribe_applicants enable row level security;
+
+alter table if exists tribe_applicants enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'allow trusted admin read on applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin read on applicants" ON tribe_applicants FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'allow public insert for applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert for applicants" ON tribe_applicants FOR INSERT WITH CHECK (true);';
+  END IF;
+END
+$$;
+
+-- Parent mentoring feedback responses. The timestamp is generated when the form is submitted.
+create table if not exists tribe_parent_feedback (
+  id uuid primary key default gen_random_uuid(),
+  parent_name text not null,
+  child_name text not null,
+  gender text,
+  mentoring_duration text,
+  positive_changes jsonb default '[]'::jsonb,
+  other_change text,
+  significant_change text,
+  impact_rating text,
+  support_areas jsonb default '[]'::jsonb,
+  other_support text,
+  future_focus text,
+  satisfaction text,
+  coach_relationship text,
+  child_comments text,
+  development_notes text,
+  improvement_suggestions text,
+  recommendation text,
+  testimonial text,
+  created_at timestamptz not null default now()
+);
+
+-- Keep existing feedback tables compatible with the gender field added to the form.
+alter table if exists tribe_parent_feedback
+  add column if not exists gender text;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'tribe_parent_feedback'::regclass
+      AND conname = 'tribe_parent_feedback_gender_check'
+  ) THEN
+    ALTER TABLE tribe_parent_feedback
+      ADD CONSTRAINT tribe_parent_feedback_gender_check
+      CHECK (gender IS NULL OR gender IN ('male', 'female'));
+  END IF;
+END
+$$;
+
+alter table if exists tribe_parent_feedback enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_parent_feedback' AND policyname = 'allow public insert for parent feedback'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert for parent feedback" ON tribe_parent_feedback FOR INSERT WITH CHECK (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_parent_feedback' AND policyname = 'allow authenticated read for parent feedback'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow authenticated read for parent feedback" ON tribe_parent_feedback FOR SELECT TO authenticated USING (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_parent_feedback' AND policyname = 'allow trusted admin update on parent feedback'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin update on parent feedback" ON tribe_parent_feedback FOR UPDATE TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR email = auth.jwt()->>''email'')) WITH CHECK (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR email = auth.jwt()->>''email''));';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_parent_feedback' AND policyname = 'allow trusted admin delete on parent feedback'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin delete on parent feedback" ON tribe_parent_feedback FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR email = auth.jwt()->>''email''));';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'deny direct update on applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on applicants" ON tribe_applicants FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'deny direct delete on applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on applicants" ON tribe_applicants FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Optionally enable RLS on the services, testimonials, and programs tables
+-- and keep admin mutations through the secure serverless endpoint.
+
+alter table if exists tribe_services enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'allow select on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_services" ON tribe_services FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'deny direct insert on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_services" ON tribe_services FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'deny direct update on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_services" ON tribe_services FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'deny direct delete on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_services" ON tribe_services FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+alter table if exists tribe_testimonials enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'allow select on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_testimonials" ON tribe_testimonials FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'deny direct insert on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_testimonials" ON tribe_testimonials FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'deny direct update on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_testimonials" ON tribe_testimonials FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'deny direct delete on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_testimonials" ON tribe_testimonials FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+e
+alter table if exists tribe_programs enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'allow select on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_programs" ON tribe_programs FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'deny direct insert on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_programs" ON tribe_programs FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'deny direct update on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_programs" ON tribe_programs FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'deny direct delete on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_programs" ON tribe_programs FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Create a table for social media preview data and allow public reads.
+create table if not exists tribe_social_feed (
+  id uuid primary key default gen_random_uuid(),
+  platform text not null,
+  icon text,
+  color text,
+  badge_text text,
+  title text,
+  summary text,
+  timestamp text,
+  target_url text,
+  embed_url text,
+  published boolean not null default false,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+alter table if exists tribe_social_feed
+  add column if not exists published boolean not null default false;
+
+insert into tribe_social_feed (platform, icon, color, badge_text, title, summary, timestamp, target_url, embed_url, published)
+select 'YouTube', 'fa-brands fa-youtube', '#FF0000', 'Featured Masterclass Broadcast', 'Marriage Alignment Frameworks: Annual Summit Highlights', 'Watch the full 45-minute premium streaming segment breaking down advanced relationship intake assessments, milestone mapping, and interactive couple exercises.', 'Streamed 3 days ago', 'https://youtube.com/shorts/-vOSeWpU1Xs?feature=share', 'https://www.youtube.com/embed/-vOSeWpU1Xs', true
+where not exists (select 1 from tribe_social_feed where platform = 'YouTube');
+
+alter table if exists tribe_social_feed enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'allow select on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_social_feed" ON tribe_social_feed FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'deny direct insert on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_social_feed" ON tribe_social_feed FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'deny direct update on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_social_feed" ON tribe_social_feed FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'deny direct delete on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_social_feed" ON tribe_social_feed FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- If you want the admin endpoint to be able to bypass these policies, it will do so using the service-role key.
+-- Keep the service-role key secret and do not expose it in client-side code.
+
+-- ==========================================================
+-- Additional table DDL expected by the frontend
+-- ==========================================================
+
+-- Applicants (registration form submissions)
+create table if not exists tribe_applicants (
+  id uuid primary key default gen_random_uuid(),
+  registration_type text,
+  parent_or_guardian_name text,
+  full_name text,
+  email text,
+  phone text,
+  home_address text,
+  children_count integer,
+  source text,
+  children_details jsonb,
+  notes text,
+  track text,
+  message text,
+  payment_reference text,
+  payment_status text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists tribe_applicants add column if not exists registration_type text;
+alter table if exists tribe_bookings add column if not exists payment_reference text;
+alter table if exists tribe_bookings add column if not exists payment_status text;
+alter table if exists tribe_applicants add column if not exists parent_or_guardian_name text;
+alter table if exists tribe_applicants add column if not exists full_name text;
+alter table if exists tribe_applicants add column if not exists email text;
+alter table if exists tribe_applicants add column if not exists phone text;
+alter table if exists tribe_applicants add column if not exists home_address text;
+alter table if exists tribe_applicants add column if not exists children_count integer;
+alter table if exists tribe_applicants add column if not exists source text;
+alter table if exists tribe_applicants add column if not exists children_details jsonb;
+alter table if exists tribe_applicants add column if not exists notes text;
+alter table if exists tribe_applicants add column if not exists track text;
+alter table if exists tribe_applicants add column if not exists message text;
+alter table if exists tribe_applicants add column if not exists payment_reference text;
+alter table if exists tribe_applicants add column if not exists payment_status text;
+
+alter table if exists tribe_applicants enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'allow trusted admin delete on applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin delete on applicants" ON tribe_applicants FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'allow public insert for applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert for applicants" ON tribe_applicants FOR INSERT WITH CHECK (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'deny direct update on applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on applicants" ON tribe_applicants FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_applicants' AND policyname = 'deny direct delete on applicants'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on applicants" ON tribe_applicants FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Bookings (session booking requests)
+create table if not exists tribe_bookings (
+  id uuid primary key default gen_random_uuid(),
+  registration_type text,
+  contact_name text,
+  email text,
+  phone text,
+  home_address text,
+  program_type text,
+  preferred_date date,
+  preferred_time text,
+  session_format text,
+  notes text,
+  payment_reference text,
+  payment_status text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists tribe_bookings enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_bookings' AND policyname = 'allow trusted admin read on bookings'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin read on bookings" ON tribe_bookings FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_bookings' AND policyname = 'allow public insert for bookings'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert for bookings" ON tribe_bookings FOR INSERT WITH CHECK (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_bookings' AND policyname = 'deny direct update on bookings'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on bookings" ON tribe_bookings FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_bookings' AND policyname = 'deny direct delete on bookings'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on bookings" ON tribe_bookings FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Services
+create table if not exists tribe_services (
+  id uuid primary key default gen_random_uuid(),
+  title text,
+  slug text,
+  description text,
+  image text,
+  order_index integer default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists tribe_services enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'allow select on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_services" ON tribe_services FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'deny direct insert on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_services" ON tribe_services FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'deny direct update on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_services" ON tribe_services FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_services' AND policyname = 'deny direct delete on tribe_services'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_services" ON tribe_services FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Programs
+create table if not exists tribe_programs (
+  id uuid primary key default gen_random_uuid(),
+  service text,
+  title text,
+  description text,
+  duration text,
+  schedule text,
+  level text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table if exists tribe_programs enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'allow select on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_programs" ON tribe_programs FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'deny direct insert on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_programs" ON tribe_programs FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'deny direct update on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_programs" ON tribe_programs FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_programs' AND policyname = 'deny direct delete on tribe_programs'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_programs" ON tribe_programs FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Testimonials
+create table if not exists tribe_testimonials (
+  id uuid primary key default gen_random_uuid(),
+  author text,
+  origin text,
+  text text,
+  image_type text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Seed the three testimonials currently shown by the homepage fallback.
+-- This gives them database ids so the Published Slider dashboard can manage them.
+insert into tribe_testimonials (author, origin, text, image_type)
+select 'Jojo''s Mom', 'Parent', 'Ms. Rosaline has been a truly exceptional tutor and coach for my 10-year-old daughter. My daughter will have her 9th class this week. From the beginning, she created a fun, warm, and engaging environment that made my daughter genuinely excited for every lesson—often looking forward to it even before it starts. What makes Ms. Rosaline stand out is her real impact. She has played a major role in building my daughter''s personality—developing her sense of responsibility and, most importantly, her inner motivation. Today, my daughter attends her classes because she wants to, not because I ask her to—and that, to me, is incredibly valuable. Through her constant encouragement, positivity, and genuine care, Ms. Rosaline has helped my daughter grow in confidence, independence, self-love, and communication. She also nurtures leadership skills and teaches children how to handle different life situations with confidence and awareness. Her dedication, patience, and uplifting spirit truly make a lasting difference. I''m deeply grateful for her efforts and highly recommend her as an inspiring and impactful life coach for children.', 'logo'
+where not exists (select 1 from tribe_testimonials where author = 'Jojo''s Mom');
+
+insert into tribe_testimonials (author, origin, text, image_type)
+select 'Chukwunonso', 'Community', 'Good evening Coach Roseline thank you for the things you have done for me, my grades are improving now.', 'logo'
+where not exists (select 1 from tribe_testimonials where author = 'Chukwunonso');
+
+insert into tribe_testimonials (author, origin, text, image_type)
+select 'A and A''s Dad', 'Parent', 'Thank You hope they are making progress in line with the schedule. They enjoyed their sessions.', 'logo'
+where not exists (select 1 from tribe_testimonials where author = 'A and A''s Dad');
+
+alter table if exists tribe_testimonials enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'allow trusted admin delete on testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin delete on testimonials" ON tribe_testimonials FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'allow trusted admin insert on testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin insert on testimonials" ON tribe_testimonials FOR INSERT TO authenticated WITH CHECK (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'allow select on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_testimonials" ON tribe_testimonials FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'deny direct insert on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_testimonials" ON tribe_testimonials FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'deny direct update on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_testimonials" ON tribe_testimonials FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_testimonials' AND policyname = 'deny direct delete on tribe_testimonials'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_testimonials" ON tribe_testimonials FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Contact messages
+create table if not exists tribe_contact_messages (
+  id uuid primary key default gen_random_uuid(),
+  name text,
+  email text,
+  subject text,
+  message text,
+  created_at timestamptz default now()
+);
+
+alter table if exists tribe_contact_messages enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_contact_messages' AND policyname = 'allow public insert for contact messages'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow public insert for contact messages" ON tribe_contact_messages FOR INSERT WITH CHECK (true);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_contact_messages' AND policyname = 'allow trusted admin read on contact messages'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow trusted admin read on contact messages" ON tribe_contact_messages FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  END IF;
+END
+$$;
+
+alter table if exists tribe_social_feed enable row level security;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'allow select on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "allow select on tribe_social_feed" ON tribe_social_feed FOR SELECT USING (true);';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'deny direct insert on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct insert on tribe_social_feed" ON tribe_social_feed FOR INSERT WITH CHECK (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'deny direct update on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct update on tribe_social_feed" ON tribe_social_feed FOR UPDATE USING (false);';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'tribe_social_feed' AND policyname = 'deny direct delete on tribe_social_feed'
+  ) THEN
+    EXECUTE 'CREATE POLICY "deny direct delete on tribe_social_feed" ON tribe_social_feed FOR DELETE USING (false);';
+  END IF;
+END
+$$;
+
+-- Activity / page views
+create table if not exists tribe_activity (
+  id uuid primary key default gen_random_uuid(),
+  session_id text,
+  user_id text,
+  path text,
+  method text,
+  ip_address text,
+  device_type text,
+  location text,
+  created_at timestamptz default now()
+);
+
+alter table if exists tribe_activity add column if not exists session_id text;
+alter table if exists tribe_activity add column if not exists user_id text;
+alter table if exists tribe_activity add column if not exists path text;
+alter table if exists tribe_activity add column if not exists method text;
+alter table if exists tribe_activity add column if not exists ip_address text;
+alter table if exists tribe_activity add column if not exists device_type text;
+alter table if exists tribe_activity add column if not exists location text;
+alter table if exists tribe_activity add column if not exists created_at timestamptz default now();
+alter table if exists tribe_activity enable row level security;
+
+drop policy if exists "allow trusted admin read on activity" on tribe_activity;
+drop policy if exists "allow trusted admin delete on activity" on tribe_activity;
+
+DO $$
+BEGIN
+  EXECUTE 'CREATE POLICY "allow trusted admin read on activity" ON tribe_activity FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+  EXECUTE 'CREATE POLICY "allow trusted admin delete on activity" ON tribe_activity FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM site_admins WHERE uid = auth.uid()::text OR lower(email) = lower(auth.jwt()->>''email'')));';
+END
+$$;
+
+create index if not exists idx_tribe_activity_created_at on tribe_activity (created_at desc);
+create index if not exists idx_tribe_activity_ip_address on tribe_activity (ip_address);
+
+-- Indexes (add as needed)
+create index if not exists idx_tribe_applicants_created_at on tribe_applicants (created_at);
+create index if not exists idx_tribe_bookings_created_at on tribe_bookings (created_at);

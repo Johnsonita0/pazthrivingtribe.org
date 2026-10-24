@@ -1,0 +1,9093 @@
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { Link, Navigate, useLocation } from "react-router-dom";
+import { supabase } from "./supabaseClient";
+import ProductCover, { resolveProductCover } from './components/ProductCover';
+import CustomDropdown from "./components/CustomDropdown";
+import DateTimePicker from "./components/DateTimePicker";
+import ProductDescriptionAssist from "./components/ProductDescriptionAssist";
+import { toDateTimeLocalValue, toIsoDateTime } from "./utils/productAvailability";
+
+const formatName = (value) =>
+  typeof value === "string"
+    ? value.replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : value;
+const getStoredFileName = (value) => {
+  if (!value || typeof value !== "string") return "";
+  const cleanValue = value.split("?")[0].replace(/\\/g, "/");
+  return decodeURIComponent(cleanValue.slice(cleanValue.lastIndexOf("/") + 1));
+};
+const formatReferenceId = (value) => {
+  const compactId = String(value || "")
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 8)
+    .toUpperCase();
+  return compactId ? `PT-${compactId}` : "N/A";
+};
+const productCurrencies = ["NGN", "USD", "GBP", "EUR", "GHS", "KES", "ZAR"];
+const currencySymbols = {
+  NGN: "₦",
+  USD: "$",
+  GBP: "£",
+  EUR: "€",
+  GHS: "GH₵",
+  KES: "KSh",
+  ZAR: "R",
+};
+const currencyRatesToNgn = {
+  NGN: 1,
+  USD: 1500,
+  GBP: 1900,
+  EUR: 1650,
+  GHS: 95,
+  KES: 11,
+  ZAR: 85,
+};
+const productCategories = [
+  "Ebook",
+  "Planner",
+  "Guide",
+  "Workbook",
+  "Journal",
+  "Course",
+  "Audio",
+  "Bundle",
+];
+
+function AdminTabBar({ selectedTab, onChangeTab }) {
+  const adminTabs = [
+    { id: "content", label: "Page Content" },
+    { id: "social", label: "Social Preview" },
+    { id: "programs", label: "Programs" },
+    { id: "clients", label: "Client Activity Log" },
+    { id: "applicants", label: "Applicants" },
+    { id: "payments", label: "Payment Settings" },
+  ];
+
+  return (
+    <div className="dashboard-tab-navigation">
+      <div className="dashboard-tab-buttons">
+        {adminTabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onChangeTab(tab.id)}
+            className={`dashboard-tab-button ${selectedTab === tab.id ? "active" : ""}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function AdminDashboard(props) {
+  const location = useLocation();
+  const emailInputRef = useRef(null);
+  const productEditorRef = useRef(null);
+  const dashboardContentRef = useRef(null);
+  const vendorCardRefs = useRef({});
+  const [isMobileView, setIsMobileView] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [approvedVendorSales, setApprovedVendorSales] = useState({});
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [workspaceDraftLoadedFor, setWorkspaceDraftLoadedFor] = useState("");
+
+  const focusDashboardView = (setter, value) => {
+    setter(value);
+    window.requestAnimationFrame(() => {
+      dashboardContentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  useEffect(() => {
+    const updateViewport = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobileView(mobile);
+      if (!mobile) setMobileMenuOpen(false);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  const {
+    mode = "login",
+    session,
+    isAdmin = false,
+    adminAccessLoading = false,
+    loading = false,
+    authError,
+    cmsErrorMessage,
+    email,
+    password,
+    setEmail,
+    setPassword,
+    handleSignIn,
+    handleSignOut,
+    selectedAdminTab,
+    setSelectedAdminTab,
+    dashboardMessage,
+    privacyContent,
+    setPrivacyContent,
+    termsContent,
+    setTermsContent,
+    faqContent,
+    setFaqContent,
+    updateFaqItem,
+    handleSaveLegalAndFaqContent,
+    cmsSuccessMessage,
+    handleUpdateContentCMS,
+    editTarget,
+    setEditTarget,
+    formTitle,
+    setFormTitle,
+    formSubtitle,
+    setFormSubtitle,
+    formDesc,
+    setFormDesc,
+    formMetric,
+    setFormMetric,
+    promoSlides,
+    setPromoSlides,
+    testimonialCount = null,
+    testimonialAuthor,
+    setTestimonialAuthor,
+    testimonialOrigin,
+    setTestimonialOrigin,
+    testimonialText,
+    setTestimonialText,
+    testimonialEditIndex,
+    handleAddTestimonial,
+    handleStartEditTestimonial,
+    handleCancelEditTestimonial,
+    handleDeleteTestimonial,
+    socialNewsFeed = [],
+    socialEditTarget,
+    setSocialEditTarget,
+    socialPreviewTitle,
+    setSocialPreviewTitle,
+    socialPreviewSummary,
+    setSocialPreviewSummary,
+    socialPreviewBadgeText,
+    setSocialPreviewBadgeText,
+    socialPreviewTimestamp,
+    setSocialPreviewTimestamp,
+    socialPreviewUrl,
+    setSocialPreviewUrl,
+    socialPreviewEmbedUrl,
+    setSocialPreviewEmbedUrl,
+    socialMetadataLoading,
+    fetchSocialUrlMetadata,
+    handleUpdateSocialPreview,
+    saveYoutubeVideo,
+    setYoutubeVideoPublished,
+    deleteYoutubeVideo,
+    clientActivityLog = [],
+    clientActivityLoading = false,
+    contactMessages = [],
+    bookings = [],
+    parentFeedback = [],
+    setParentFeedback,
+    programForm,
+    setProgramForm,
+    programs,
+    handleCreateProgram,
+    handleRemoveProgram,
+    applicants,
+    paystackPublicKey,
+    teensKidsMonthlyFee,
+    tempPaystackKey,
+    setTempPaystackKey,
+    tempMonthlyFee,
+    setTempMonthlyFee,
+    setPaystackPublicKey,
+    setTeensKidsMonthlyFee,
+    refreshAdminData,
+    refreshLoading = false,
+    storeProducts = [],
+    setStoreProducts,
+    storeBankAccount = {},
+    setStoreBankAccount,
+    shopOrders = [],
+    setShopOrders,
+  } = props;
+
+  const [serverCompletedShopOrderCount, setServerCompletedShopOrderCount] = useState(null);
+  const [trackingDraft, setTrackingDraft] = useState({
+    tracking_status: "order_placed",
+    tracking_number: "",
+    estimated_delivery_at: "",
+    note: "",
+  });
+  const [trackingSaveBusy, setTrackingSaveBusy] = useState(false);
+  const [trackingSaveError, setTrackingSaveError] = useState("");
+  const [trackingSaveNotice, setTrackingSaveNotice] = useState("");
+
+  useEffect(() => {
+    if (mode !== "dashboard" || !isAdmin) return undefined;
+    let active = true;
+    fetch("/api/product-metrics?scope=store")
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Completed store order count unavailable.");
+        const count = Number(payload.completedOrders);
+        if (!Number.isFinite(count)) throw new Error("Completed store order count is invalid.");
+        if (active) setServerCompletedShopOrderCount(count);
+      })
+      .catch((error) => {
+        if (active) console.warn("Completed store order count unavailable:", error.message);
+      });
+    return () => { active = false; };
+  }, [mode, isAdmin]);
+
+  const [storeProductForm, setStoreProductForm] = useState({
+    title: "",
+    description: "",
+    price: "",
+    currency: "NGN",
+    isFree: false,
+    category: "Ebook",
+    fileUrl: "",
+    cover: "",
+    inStock: true,
+    stockCount: "",
+    releaseEnabled: false,
+    releaseAt: "",
+    closeAt: "",
+    allowAfterClose: false,
+  });
+  const [releaseSettingsOpen, setReleaseSettingsOpen] = useState(false);
+  const [productFileUploading, setProductFileUploading] = useState(false);
+  const [coverFileUploading, setCoverFileUploading] = useState(false);
+  const [productFileName, setProductFileName] = useState("");
+  const [coverFileName, setCoverFileName] = useState("");
+  const [productFileDragActive, setProductFileDragActive] = useState(false);
+  const [coverFileDragActive, setCoverFileDragActive] = useState(false);
+
+  const [activeDashboardView, setActiveDashboardView] = useState("visitors");
+  const [customerProfiles, setCustomerProfiles] = useState([]);
+  const [customerCount, setCustomerCount] = useState(null);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerError, setCustomerError] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerTab, setCustomerTab] = useState("users");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerDraft, setCustomerDraft] = useState(null);
+  const [customerSubject, setCustomerSubject] = useState("");
+  const [customerMessage, setCustomerMessage] = useState("");
+  const [customerBroadcastSubject, setCustomerBroadcastSubject] = useState("");
+  const [customerBroadcastMessage, setCustomerBroadcastMessage] = useState("");
+  const [customerActionBusy, setCustomerActionBusy] = useState("");
+  const [commerceSubTab, setCommerceSubTab] = useState("storefront");
+  const [paymentHistoryTab, setPaymentHistoryTab] = useState("booking");
+  const [tableFilters, setTableFilters] = useState({});
+  const [dashboardTablePage, setDashboardTablePage] = useState(1);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [viewingRow, setViewingRow] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [youtubeActionError, setYoutubeActionError] = useState("");
+  const [youtubePendingAction, setYoutubePendingAction] = useState("");
+  const [youtubeEditingId, setYoutubeEditingId] = useState(null);
+  const [youtubeEditDraft, setYoutubeEditDraft] = useState({ title: "", summary: "", url: "" });
+  const [postingToSlider, setPostingToSlider] = useState(false);
+  const [testimonialConfirmation, setTestimonialConfirmation] = useState(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null);
+  const [productDeleteTarget, setProductDeleteTarget] = useState(null);
+  const [vendorProfiles, setVendorProfiles] = useState([]);
+  const [vendorCount, setVendorCount] = useState(null);
+  const [selectedVendor, setSelectedVendor] = useState(null);
+  const [productReviewModal, setProductReviewModal] = useState(null);
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [vendorTab, setVendorTab] = useState("profiles");
+  const [vendorEditForm, setVendorEditForm] = useState(null);
+  const [vendorSaving, setVendorSaving] = useState(false);
+  const [vendorPasswordResetting, setVendorPasswordResetting] = useState(null);
+  const [vendorEditing, setVendorEditing] = useState(false);
+  const [vendorRecordCounts, setVendorRecordCounts] = useState({});
+  const [vendorDocumentPreviewOpen, setVendorDocumentPreviewOpen] =
+    useState(false);
+  const [adminAdForm, setAdminAdForm] = useState({
+    eyebrow: "PAZ Marketplace",
+    headline: "",
+    productUrl: "",
+  });
+  const [adminAds, setAdminAds] = useState([]);
+  const [supportMessages, setSupportMessages] = useState([]);
+  const [productChatConversations, setProductChatConversations] = useState([]);
+  const [productChatReplyDrafts, setProductChatReplyDrafts] = useState({});
+  const [productChatReplySaving, setProductChatReplySaving] = useState(null);
+  const [openSupportCount, setOpenSupportCount] = useState(null);
+  const [supportReplyDrafts, setSupportReplyDrafts] = useState({});
+  const [supportReplySaving, setSupportReplySaving] = useState(null);
+  const paymentReference =
+    new URLSearchParams(location.search).get("reference") || "";
+
+  useEffect(() => {
+    if (mode !== "dashboard" || !paymentReference) return;
+    setActiveDashboardView("payment-history");
+    if (paymentReference.toUpperCase().startsWith("BOOK-"))
+      setPaymentHistoryTab("booking");
+    if (paymentReference.toUpperCase().startsWith("REG-"))
+      setPaymentHistoryTab("teens");
+    if (paymentReference.toUpperCase().startsWith("PAZ-"))
+      setPaymentHistoryTab("store");
+  }, [location.search, mode, paymentReference]);
+
+  useEffect(() => {
+    if (!selectedOrder) return;
+  }, [selectedOrder]);
+
+  const openTestimonialConfirmation = () => {
+    if (!viewingRow) return;
+    const testimonialText =
+      viewingRow.Testimonial || viewingRow.testimonial || viewingRow.text || "";
+    if (!testimonialText.trim()) {
+      showAdminToast(
+        "error",
+        "No testimonial found",
+        "This record does not contain a testimonial to publish.",
+      );
+      return;
+    }
+    setTestimonialConfirmation({
+      title:
+        viewingRow.Parent ||
+        viewingRow["Parent name"] ||
+        viewingRow.Name ||
+        viewingRow.author ||
+        "Anonymous",
+      text: testimonialText,
+      origin:
+        viewingRow.Origin ||
+        viewingRow.origin ||
+        (activeDashboardView === "feedback" ? "Parent Feedback" : "Community"),
+    });
+  };
+
+  const postTestimonialToSlider = async () => {
+    if (
+      !viewingRow ||
+      !["testimonials", "feedback"].includes(activeDashboardView)
+    )
+      return;
+
+    setPostingToSlider(true);
+    try {
+      const testimonialText =
+        viewingRow.Testimonial ||
+        viewingRow.testimonial ||
+        viewingRow.text ||
+        "";
+      if (!testimonialText.trim()) {
+        showAdminToast(
+          "error",
+          "No testimonial found",
+          "This record does not contain a testimonial to publish.",
+        );
+        return;
+      }
+      const newSlide = {
+        id: viewingRow.id || `testimonial-${Date.now()}`,
+        title:
+          viewingRow.Parent ||
+          viewingRow["Parent name"] ||
+          viewingRow.Name ||
+          viewingRow.author ||
+          "Anonymous",
+        text: testimonialText,
+        origin: viewingRow.Origin || viewingRow.origin || "Community",
+        image: "/logo/logomain.png",
+        imageType: "logo",
+      };
+
+      const token = session?.access_token || session?.accessToken || "";
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "insert",
+          table: "tribe_testimonials",
+          payload: [
+            {
+              author: newSlide.title,
+              origin:
+                activeDashboardView === "feedback"
+                  ? "Parent Feedback"
+                  : newSlide.origin,
+              text: newSlide.text,
+              status: "published",
+              image_type: "logo",
+            },
+          ],
+        }),
+      });
+      if (!response.ok) {
+        if (
+          response.status !== 404 &&
+          response.status !== 502 &&
+          response.status !== 503
+        )
+          throw new Error(
+            "The testimonial could not be saved to the home slider.",
+          );
+        const { error: directInsertError } = await supabase
+          .from("tribe_testimonials")
+          .insert([
+            {
+              author: newSlide.title,
+              origin:
+                activeDashboardView === "feedback"
+                  ? "Parent Feedback"
+                  : newSlide.origin,
+              text: newSlide.text,
+              image_type: "logo",
+            },
+          ]);
+        if (directInsertError) throw directInsertError;
+      }
+
+      if (typeof setPromoSlides === "function") {
+        setPromoSlides((prev) => [newSlide, ...prev]);
+      }
+
+      showAdminToast(
+        "success",
+        "Posted to slider",
+        `Testimonial from ${newSlide.title} is now live on the main carousel.`,
+      );
+      setTestimonialConfirmation(null);
+      setViewingRow(null);
+    } catch (err) {
+      console.error("Failed to post testimonial:", err);
+      showAdminToast(
+        "error",
+        "Post failed",
+        "Could not add testimonial to slider. Please try again.",
+      );
+    } finally {
+      setPostingToSlider(false);
+    }
+  };
+  const [adminToast, setAdminToast] = useState(null);
+  const [proofPreviewModal, setProofPreviewModal] = useState(null);
+
+  const getPaymentProofPreview = (order) => {
+    if (!order) return null;
+    const candidates = [
+      order.paymentProofPreview,
+      order.paymentProof,
+      order.paymentProofUrl,
+      order.paymentProofImage,
+      order.receiptPreview,
+      order.proofImage,
+      order.proof_url,
+      order.payment_proof_preview,
+      order.payment_proof_url,
+      order.payment_proof_path,
+      order.paymentProofDataUrl,
+      order.paymentProofDataUri,
+      order.payment_proof_path
+        ? `https://nidlwriwkfegffjckwog.supabase.co/storage/v1/object/public/prof-upload/${order.payment_proof_path}`
+        : null,
+      order.payment_proof_path
+        ? `/storage/v1/object/public/prof-upload/${order.payment_proof_path}`
+        : null,
+    ];
+    return (
+      candidates.find(
+        (value) => typeof value === "string" && value.trim().length > 0,
+      ) || null
+    );
+  };
+
+  const showAdminToast = (type, title, message, actions = []) => {
+    setAdminToast({ type, title, message, actions });
+  };
+
+  const customerAdminRequest = async (request) => {
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-customers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(request),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Customer admin request failed.");
+    return payload;
+  };
+
+  useEffect(() => {
+    if (mode !== "dashboard" || !isAdmin || activeDashboardView !== "users") return undefined;
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    void Promise.resolve().then(() => {
+      if (!active) return null;
+      setCustomerLoading(true);
+      setCustomerError("");
+      return fetch("/api/admin-customers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action: "list_customers", page: customerPage, pageSize: 25, search: customerSearch }),
+      });
+    }).then(async (response) => {
+      if (!response) return;
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Customer accounts could not be loaded.");
+      if (active) {
+        setCustomerProfiles(Array.isArray(payload.customers) ? payload.customers : []);
+        setCustomerCount(Number(payload.count) || 0);
+      }
+    }).catch((error) => {
+      if (active) setCustomerError(error.message || "Customer accounts could not be loaded.");
+    }).finally(() => {
+      if (active) setCustomerLoading(false);
+    });
+    return () => { active = false; };
+  }, [activeDashboardView, customerPage, customerSearch, isAdmin, mode, session?.accessToken, session?.access_token]);
+
+  const saveCustomerProfile = async () => {
+    if (!customerDraft) return;
+    setCustomerActionBusy("save");
+    try {
+      const payload = await customerAdminRequest({
+        action: "save_customer",
+        id: customerDraft.id,
+        profile: {
+          first_name: customerDraft.first_name || "",
+          last_name: customerDraft.last_name || "",
+          full_name: customerDraft.full_name || "",
+          phone: customerDraft.phone || "",
+          delivery_address: customerDraft.delivery_address || {},
+          country_code: customerDraft.country_code || "",
+          language: customerDraft.language || "",
+          currency: customerDraft.currency || "",
+          notifications_enabled: Boolean(customerDraft.notifications_enabled),
+        },
+      });
+      const saved = payload.customer;
+      setCustomerProfiles((current) => current.map((profile) => profile.id === saved.id ? saved : profile));
+      setCustomerDraft(saved);
+      showAdminToast("success", "Customer updated", "The customer profile changes were saved.");
+    } catch (error) {
+      showAdminToast("error", "Save failed", error.message || "The customer profile could not be saved.");
+    } finally {
+      setCustomerActionBusy("");
+    }
+  };
+
+  const sendCustomerNotification = async (bulk) => {
+    const subject = bulk ? customerBroadcastSubject : customerSubject;
+    const messageText = bulk ? customerBroadcastMessage : customerMessage;
+    if (!String(subject).trim() || !String(messageText).trim()) {
+      showAdminToast("error", "Message required", "Enter both a subject and message before sending.");
+      return;
+    }
+    if (bulk && !window.confirm(`Send this in-app notification to all ${customerCount || 0} customer accounts? This will not send email or notify vendor accounts.`)) return;
+    if (!bulk && !customerDraft) return;
+    setCustomerActionBusy(bulk ? "bulk" : "single");
+    try {
+      const payload = await customerAdminRequest({
+        action: bulk ? "send_bulk_customer_notification" : "send_customer_notification",
+        ...(bulk ? {} : { id: customerDraft.id }),
+        subject,
+        message: messageText,
+      });
+      const message = bulk
+        ? `Delivered in the PAZ app to ${payload.sent} customers${payload.failed ? `; ${payload.failed} failed` : ""}.`
+        : `In-app notification delivered to ${customerDraft.full_name || customerDraft.email}.`;
+      showAdminToast(payload.failed ? "error" : "success", payload.failed ? "Partially sent" : "Message sent", message);
+      if (bulk) {
+        setCustomerBroadcastSubject("");
+        setCustomerBroadcastMessage("");
+      } else {
+        setCustomerSubject("");
+        setCustomerMessage("");
+      }
+    } catch (error) {
+      showAdminToast("error", "Message failed", error.message || "The customer message could not be sent.");
+    } finally {
+      setCustomerActionBusy("");
+    }
+  };
+
+  useEffect(() => {
+    if (!adminToast) return undefined;
+    const timer = window.setTimeout(() => setAdminToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [adminToast]);
+
+  useEffect(() => {
+    if (
+      mode !== "dashboard" ||
+      activeDashboardView !== "feedback" ||
+      typeof setParentFeedback !== "function"
+    )
+      return undefined;
+    let active = true;
+    void (async () => {
+      const rows = [];
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from("tribe_parent_feedback")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .range(offset, offset + 999);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      if (active) setParentFeedback(rows);
+    })().catch((error) => console.error("Parent feedback refresh failed:", error));
+    return () => {
+      active = false;
+    };
+  }, [activeDashboardView, mode, setParentFeedback]);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || activeDashboardView !== "vendors")
+      return undefined;
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "select",
+        table: "vendor_profiles",
+        columns:
+          "id,company_name,logo_url,contact_email,id_type,id_document_path,status,vendor_type,payout_account_name,payout_account_number,payout_bank_name,payout_currency,rejection_reason,created_at,approved_at",
+      }),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!active) return;
+        if (response.ok) {
+          setVendorProfiles(Array.isArray(payload.data) ? payload.data : []);
+        } else {
+          showAdminToast(
+            "error",
+            "Vendor list unavailable",
+            payload.error || "The vendor records could not be loaded.",
+          );
+        }
+      })
+      .catch((error) => {
+        if (active)
+          showAdminToast(
+            "error",
+            "Vendor list unavailable",
+            error.message || "The vendor records could not be loaded.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeDashboardView, mode, session]);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || activeDashboardView !== "vendors" || !vendorProfiles.length)
+      return undefined;
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch("/api/admin-update", { method: "POST", headers, body: JSON.stringify({ action: "select", table: "store_products", columns: "vendor_id,status,created_at" }) }),
+      fetch("/api/admin-update", { method: "POST", headers, body: JSON.stringify({ action: "select", table: "vendor_sales", columns: "vendor_id,payout_status,created_at" }) }),
+    ])
+      .then(async ([productsResponse, salesResponse]) => {
+        const productsPayload = await productsResponse.json().catch(() => ({}));
+        const salesPayload = await salesResponse.json().catch(() => ({}));
+        if (!active) return;
+        const counts = {};
+        vendorProfiles.forEach((vendor) => {
+          const products = productsResponse.ok && Array.isArray(productsPayload.data)
+            ? productsPayload.data.filter((item) => item.vendor_id === vendor.id)
+            : [];
+          const sales = salesResponse.ok && Array.isArray(salesPayload.data)
+            ? salesPayload.data.filter((item) => item.vendor_id === vendor.id)
+            : [];
+          counts[vendor.id] = {
+            products: products.length,
+            sales: sales.length,
+            newRecords: products.filter((item) => item.status === "pending").length + sales.filter((item) => item.payout_status === "pending").length,
+          };
+        });
+        setVendorRecordCounts(counts);
+      })
+      .catch(() => {
+        if (active) setVendorRecordCounts({});
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeDashboardView, mode, session, vendorProfiles]);
+
+  const replyToSupportMessage = async (message) => {
+    const reply = String(supportReplyDrafts[message.id] || "").trim();
+    if (!reply || !message.id || !message.sourceTable) return;
+    setSupportReplySaving(message.id);
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "reply_support", table: message.sourceTable, match: { id: message.id }, payload: { admin_reply: reply } }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setSupportReplySaving(null);
+    if (!response.ok) {
+      showAdminToast("error", "Reply failed", payload.error || "The support reply could not be saved.");
+      return;
+    }
+    setSupportMessages((current) => current.map((item) => item.id === message.id && item.sourceTable === message.sourceTable ? { ...item, admin_reply: reply, status: "closed", updated_at: new Date().toISOString() } : item));
+    setSupportReplyDrafts((current) => ({ ...current, [message.id]: "" }));
+    showAdminToast("success", "Reply sent", "Your reply was emailed to the client and saved to the support conversation.");
+  };
+
+  const replyToProductChat = async (conversation) => {
+    const message = String(productChatReplyDrafts[conversation.id] || "").trim();
+    if (!message || !conversation.id) return;
+    setProductChatReplySaving(conversation.id);
+    try {
+      const token = session?.access_token || session?.accessToken || "";
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "reply_product_chat", payload: { conversationId: conversation.id, message } }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showAdminToast("error", "Reply failed", payload.error || "The product chat reply could not be sent.");
+        return;
+      }
+      setProductChatConversations((current) => current.map((item) => item.id === conversation.id
+        ? { ...item, status: "open", last_message_at: payload.message?.created_at || new Date().toISOString(), messages: [...(item.messages || []), payload.message] }
+        : item));
+      setProductChatReplyDrafts((current) => ({ ...current, [conversation.id]: "" }));
+      showAdminToast(payload.emailSent ? "success" : "warning", payload.emailSent ? "Reply sent" : "Reply saved", payload.emailSent ? "Your reply is in the conversation and was emailed to the customer." : "Your reply is saved, but the customer email could not be delivered.");
+    } catch {
+      showAdminToast("error", "Reply failed", "The product chat reply could not be sent.");
+    } finally {
+      setProductChatReplySaving(null);
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== "dashboard" || activeDashboardView !== "vendors" || vendorTab !== "approved") return undefined;
+    const approvedVendors = vendorProfiles.filter((vendor) => vendor.status === "approved");
+    if (!approvedVendors.length) {
+      setApprovedVendorSales({});
+      return undefined;
+    }
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    Promise.all(approvedVendors.map(async (vendor) => {
+      const response = await fetch("/api/admin-update", { method: "POST", headers, body: JSON.stringify({ action: "select", table: "vendor_sales", match: { vendor_id: vendor.id }, columns: "id,order_number,product_title,quantity,vendor_amount,currency,payout_status,created_at" }) });
+      const payload = await response.json().catch(() => ({}));
+      return [vendor.id, response.ok && Array.isArray(payload.data) ? payload.data : []];
+    })).then((entries) => {
+      if (active) setApprovedVendorSales(Object.fromEntries(entries));
+    }).catch(() => {
+      if (active) setApprovedVendorSales({});
+    });
+    return () => { active = false; };
+  }, [activeDashboardView, mode, session, vendorProfiles, vendorTab]);
+
+  useEffect(() => {
+    if (
+      mode !== "dashboard" ||
+      activeDashboardView !== "commerce" ||
+      commerceSubTab !== "ads"
+    )
+      return undefined;
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "select",
+        table: "promotional_ads",
+        columns:
+          "id,eyebrow,headline,product_url,action_label,posted_by,posted_by_email,vendor_id,vendor_name,status,is_platform_ad,created_at,updated_at",
+      }),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (active && response.ok)
+          setAdminAds(Array.isArray(payload.data) ? payload.data : []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [activeDashboardView, commerceSubTab, mode, session]);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || activeDashboardView !== "support")
+      return undefined;
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    const loadSupportInbox = () => Promise.all([
+      Promise.all(
+        ["vendor_support_messages", "customer_support_messages"].map((table) =>
+          fetch("/api/admin-update", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ action: "select", table, columns: "*" }),
+          }).then((response) =>
+            response
+              .json()
+              .then((payload) => (response.ok ? payload.data || [] : [])),
+          ),
+        ),
+      ),
+      fetch("/api/admin-update", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ action: "product_chat_inbox" }),
+      }).then((response) => response.json().then((payload) => (response.ok ? payload.data || [] : []))),
+    ])
+      .then(([[vendorMessages, customerMessages], productChats]) => {
+        if (active)
+          setSupportMessages(
+            [
+              ...vendorMessages.map((item) => ({ ...item, source: "Vendor", sourceTable: "vendor_support_messages" })),
+              ...customerMessages.map((item) => ({
+                ...item,
+                source: "Customer",
+                sourceTable: "customer_support_messages",
+              })),
+            ].sort(
+              (left, right) =>
+                new Date(right.created_at) - new Date(left.created_at),
+            ),
+          );
+        if (active) setProductChatConversations(productChats);
+      })
+      .catch(() => {});
+    void loadSupportInbox();
+    const refreshInterval = window.setInterval(() => { void loadSupportInbox(); }, 20000);
+    return () => {
+      active = false;
+      window.clearInterval(refreshInterval);
+    };
+  }, [activeDashboardView, mode, session]);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || !isAdmin || !session || refreshLoading)
+      return undefined;
+    let active = true;
+    const token = session?.access_token || session?.accessToken || "";
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    const loadCount = async (table, match) => {
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ action: "count", table, match }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `Could not count ${table}.`);
+      return Number(payload.count || 0);
+    };
+
+    Promise.all([
+      loadCount("vendor_profiles"),
+      loadCount("vendor_support_messages", { status: "open" }),
+      loadCount("customer_support_messages", { status: "open" }),
+      loadCount("product_chat_conversations", { status: "open" }),
+    ])
+      .then(([vendors, vendorSupport, customerSupport, productChats]) => {
+        if (!active) return;
+        setVendorCount(vendors);
+        setOpenSupportCount(vendorSupport + customerSupport + productChats);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error("Dashboard activity counts could not be loaded:", error);
+        setVendorCount(null);
+        setOpenSupportCount(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdmin, mode, refreshLoading, session]);
+
+  const updateVendorStatus = async (vendor, status) => {
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "update",
+        table: "vendor_profiles",
+        match: { id: vendor.id },
+        payload: {
+          status,
+          approved_at: status === "approved" ? new Date().toISOString() : null,
+          approved_by: status === "approved" ? session?.user?.id || null : null,
+        },
+      }),
+    });
+    if (!response.ok) {
+      showAdminToast(
+        "error",
+        "Vendor update failed",
+        "The vendor status could not be changed.",
+      );
+      return;
+    }
+    setVendorProfiles((current) =>
+      current.map((item) =>
+        item.id === vendor.id ? { ...item, status } : item,
+      ),
+    );
+    showAdminToast(
+      "success",
+      "Vendor updated",
+      `${vendor.company_name || "Vendor"} is now ${status}.`,
+    );
+  };
+
+  const sendVendorPasswordReset = async (vendor) => {
+    if (!vendor?.id || !vendor.contact_email) return;
+    setVendorPasswordResetting(vendor.id);
+    try {
+      const token = session?.access_token || session?.accessToken || "";
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "send_vendor_password_reset", match: { id: vendor.id } }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "The password reset email could not be sent.");
+      showAdminToast("success", "Reset email sent", `A password reset link was sent to ${payload.email || vendor.contact_email}.`);
+    } catch (error) {
+      showAdminToast("error", "Reset email failed", error.message || "The password reset email could not be sent.");
+    } finally {
+      setVendorPasswordResetting(null);
+    }
+  };
+
+  const viewVendorDetails = async (vendor) => {
+    if (selectedVendor?.id === vendor.id && !selectedVendor.loading) {
+      setSelectedVendor(null);
+      return;
+    }
+    setSelectedVendor({ ...vendor, loading: true });
+    setVendorEditForm({ ...vendor });
+    setVendorEditing(false);
+    setVendorDocumentPreviewOpen(false);
+    const token = session?.access_token || session?.accessToken || "";
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    let productsResponse;
+    let salesResponse;
+    try {
+      [productsResponse, salesResponse] = await Promise.all([
+        fetch("/api/admin-update", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            action: "select",
+            table: "store_products",
+            match: { vendor_id: vendor.id },
+            columns: "id,vendor_id,title,description,price,currency,category,vendor_type,stock_count,stock_unit,expiry_date,brand,model,condition,warranty_period,file_url,cover,status,name_verified,description_verified,cover_verified,attachment_verified,name_verified_at,published_at,created_at,updated_at",
+          }),
+        }),
+        fetch("/api/admin-update", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            action: "select",
+            table: "vendor_sales",
+            match: { vendor_id: vendor.id },
+            columns:
+              "id,order_number,product_title,quantity,vendor_amount,currency,payout_status,created_at",
+          }),
+        }),
+      ]);
+    } catch (error) {
+      setSelectedVendor(null);
+      showAdminToast(
+        "error",
+        "Vendor details unavailable",
+        "The local API server is not reachable. Start it on port 3001 and try again.",
+      );
+      return;
+    }
+    const productsPayload = await productsResponse.json().catch(() => ({}));
+    const salesPayload = await salesResponse.json().catch(() => ({}));
+    let documentPreviewUrl = null;
+    let directDocumentError = null;
+    if (vendor.id_document_path) {
+      const { data: directDocumentUrl, error } = await supabase.storage
+        .from("vendor-verification")
+        .createSignedUrl(vendor.id_document_path, 3600);
+      documentPreviewUrl = directDocumentUrl?.signedUrl || null;
+      directDocumentError = error;
+    }
+    if (!documentPreviewUrl && vendor.id_document_path) {
+      const previewResponse = await fetch("/api/admin-update", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          action: "signed_url",
+          bucket: "vendor-verification",
+          path: vendor.id_document_path,
+          expiresIn: 3600,
+        }),
+      });
+      const previewPayload = await previewResponse.json().catch(() => ({}));
+      documentPreviewUrl = previewResponse.ok
+        ? previewPayload.signedUrl || previewPayload.data?.signedUrl || previewPayload.data?.signedURL || null
+        : null;
+      if (!documentPreviewUrl && directDocumentError && previewPayload.error) {
+        showAdminToast("error", "Document preview unavailable", directDocumentError.message);
+      }
+    }
+    setSelectedVendor({
+      ...vendor,
+      documentPreviewUrl,
+      products: productsResponse.ok ? productsPayload.data || [] : [],
+      sales: salesResponse.ok ? salesPayload.data || [] : [],
+      loading: false,
+    });
+    window.setTimeout(() => {
+      vendorCardRefs.current[vendor.id]?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  };
+
+  const saveVendorProfile = async () => {
+    if (!vendorEditForm?.id) return;
+    setVendorSaving(true);
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "update",
+        table: "vendor_profiles",
+        match: { id: vendorEditForm.id },
+        payload: {
+          company_name: vendorEditForm.company_name?.trim(),
+          contact_email: vendorEditForm.contact_email?.trim(),
+          id_type: vendorEditForm.id_type,
+          vendor_type: vendorEditForm.vendor_type || "books",
+          payout_account_name: vendorEditForm.payout_account_name?.trim(),
+          payout_account_number: vendorEditForm.payout_account_number?.trim(),
+          payout_bank_name: vendorEditForm.payout_bank_name?.trim(),
+          payout_currency: vendorEditForm.payout_currency,
+          status: vendorEditForm.status,
+          rejection_reason: vendorEditForm.rejection_reason?.trim() || null,
+        },
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setVendorSaving(false);
+    if (!response.ok) {
+      showAdminToast(
+        "error",
+        "Vendor profile update failed",
+        payload.error || "The vendor profile could not be saved.",
+      );
+      return;
+    }
+    setVendorProfiles((current) =>
+      current.map((item) =>
+        item.id === vendorEditForm.id ? { ...item, ...vendorEditForm } : item,
+      ),
+    );
+    setSelectedVendor((current) =>
+      current?.id === vendorEditForm.id
+        ? { ...current, ...vendorEditForm }
+        : current,
+    );
+    showAdminToast(
+      "success",
+      "Vendor profile saved",
+      `${vendorEditForm.company_name || "Vendor"} profile details were updated.`,
+    );
+  };
+
+  const vendorTabs = [
+    { id: "profiles", label: "Vendor profiles", statuses: null },
+    { id: "pending", label: "Pending review", statuses: ["pending"] },
+    { id: "approved", label: "Approved", statuses: ["approved"] },
+    { id: "rejected", label: "Rejected", statuses: ["rejected", "suspended"] },
+  ];
+
+  const activeVendorTab =
+    vendorTabs.find((tab) => tab.id === vendorTab) || vendorTabs[0];
+  const visibleVendorProfiles = vendorProfiles.filter((vendor) => {
+    const query = vendorSearch.trim().toLowerCase();
+    const matchesTab =
+      !activeVendorTab.statuses ||
+      activeVendorTab.statuses.includes(vendor.status);
+    const matchesSearch =
+      !query ||
+      [
+        vendor.company_name,
+        vendor.contact_email,
+        vendor.payout_bank_name,
+        vendor.payout_account_name,
+        vendor.status,
+      ].some((value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(query),
+      );
+    return matchesTab && matchesSearch;
+  });
+
+  const publishAdminAd = async (event) => {
+    event.preventDefault();
+    if (!adminAdForm.headline.trim() || !adminAdForm.productUrl.trim()) return;
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "insert",
+        table: "promotional_ads",
+        payload: [
+          {
+            eyebrow: adminAdForm.eyebrow.trim(),
+            headline: adminAdForm.headline.trim(),
+            product_url: adminAdForm.productUrl.trim(),
+            action_label: "View product",
+            posted_by: session?.user?.id || null,
+            posted_by_email: session?.user?.email || null,
+            status: "published",
+          },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({}));
+      showAdminToast(
+        "error",
+        "Ad publishing failed",
+        errorPayload.error || "The promotional ad could not be published.",
+      );
+      return;
+    }
+    const adsResponse = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "select",
+        table: "promotional_ads",
+        columns:
+          "id,eyebrow,headline,product_url,action_label,posted_by,posted_by_email,vendor_id,vendor_name,status,is_platform_ad,created_at,updated_at",
+      }),
+    });
+    const adsPayload = await adsResponse.json().catch(() => ({}));
+    if (adsResponse.ok && Array.isArray(adsPayload.data))
+      setAdminAds(adsPayload.data);
+    setAdminAdForm({
+      eyebrow: "PAZ Marketplace",
+      headline: "",
+      productUrl: "",
+    });
+    showAdminToast(
+      "success",
+      "Ad published",
+      "The promotional ad is now rotating on the shop.",
+    );
+  };
+
+  const updateAdStatus = async (ad, status) => {
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "update",
+        table: "promotional_ads",
+        match: { id: ad.id },
+        payload: { status },
+      }),
+    });
+    if (!response.ok) {
+      showAdminToast(
+        "error",
+        "Ad update failed",
+        "The promotional ad status could not be changed.",
+      );
+      return;
+    }
+    setAdminAds((current) =>
+      current.map((item) => (item.id === ad.id ? { ...item, status } : item)),
+    );
+    showAdminToast("success", "Ad status updated", `The ad is now ${status}.`);
+  };
+
+  const deleteAd = async (ad) => {
+    if (!ad?.id || ad.is_platform_ad)
+      return showAdminToast(
+        "info",
+        "Platform ad protected",
+        "This PAZ vendor invitation ad cannot be deleted.",
+      );
+    if (
+      !window.confirm(
+        `Delete the ad "${ad.headline || "Untitled ad"}" permanently?`,
+      )
+    )
+      return;
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        action: "delete",
+        table: "promotional_ads",
+        match: { id: ad.id },
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      showAdminToast(
+        "error",
+        "Ad deletion failed",
+        payload.error || "The promotional ad could not be deleted.",
+      );
+      return;
+    }
+    setAdminAds((current) => current.filter((item) => item.id !== ad.id));
+    showAdminToast(
+      "success",
+      "Ad deleted",
+      "The promotional ad was permanently removed.",
+    );
+  };
+
+  const toggleSelectRow = (id) => {
+    setSelectedRowIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      return [...prev, id];
+    });
+  };
+
+  const clearSelection = () => setSelectedRowIds([]);
+
+  const tableMap = {
+    visitors: "tribe_activity",
+    teens: "tribe_applicants",
+    messages: "tribe_contact_messages",
+    bookings: "tribe_bookings",
+    testimonials: "tribe_testimonials",
+    slider: "tribe_testimonials",
+    feedback: "tribe_parent_feedback",
+  };
+
+  const extractDbId = (rowId) => {
+    if (!rowId) return rowId;
+    const parts = rowId.split("-");
+    // Child rows use the database id plus a numeric child index.
+    if (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1]))
+      return parts.slice(0, -1).join("-");
+    if (parts.length > 2) return parts.slice(0, 5).join("-");
+    if (parts.length === 2 && parts[0] && parts[0].includes("-"))
+      return parts[0];
+    return rowId;
+  };
+
+  const deleteRows = async (idsToDelete) => {
+    if (!idsToDelete || idsToDelete.length === 0) return;
+    const table =
+      tableMap[activeDashboardView] ||
+      (activeDashboardView === "visitors" ? "tribe_activity" : null);
+    if (!table) {
+      showAdminToast(
+        "error",
+        "Delete not available",
+        "This table does not support row deletions from the current dashboard view.",
+      );
+      return;
+    }
+    const token = session?.access_token || session?.accessToken || "";
+    if (!token) {
+      showAdminToast(
+        "error",
+        "Authentication required",
+        "Your admin session expired. Please sign in again to delete records.",
+      );
+      return;
+    }
+
+    try {
+      for (const rid of idsToDelete) {
+        const dbId = extractDbId(rid);
+        const body = { action: "delete", table, match: { id: dbId } };
+        const resp = await fetch("/api/admin-update", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          let errMsg = "Delete failed";
+          try {
+            const json = await resp.json();
+            errMsg = json?.error || errMsg;
+          } catch (parseErr) {
+            errMsg = `${resp.status} ${resp.statusText}`;
+          }
+          console.error("Delete failed", errMsg);
+          if (
+            resp.status === 502 ||
+            resp.status === 503 ||
+            resp.status === 404
+          ) {
+            const { error: directDeleteError } = await supabase
+              .from(table)
+              .delete()
+              .eq("id", dbId);
+            if (!directDeleteError) continue;
+            throw new Error(directDeleteError.message || errMsg);
+          }
+          throw new Error(errMsg);
+        }
+        try {
+          await resp.json();
+        } catch (parseErr) {
+          // Some endpoints return empty 200 responses; that's okay
+          console.warn("Could not parse response JSON, but delete succeeded");
+        }
+      }
+      clearSelection();
+      if (typeof refreshAdminData === "function") refreshAdminData();
+      return true;
+    } catch (err) {
+      console.error("Bulk delete error", err);
+      showAdminToast(
+        "error",
+        "Delete failed",
+        `${err?.message || "One or more rows could not be deleted."} Please check the database permissions if the problem continues.`,
+      );
+      return false;
+    }
+  };
+
+  const deleteSelected = () => {
+    if (!selectedRowIds || selectedRowIds.length === 0) return;
+    setDeleteConfirmation({
+      ids: selectedRowIds,
+      message: ["testimonials", "slider"].includes(activeDashboardView)
+        ? `This will remove ${selectedRowIds.length} selected testimonial(s) from the public slider.`
+        : `This will permanently remove ${selectedRowIds.length} selected record(s).`,
+    });
+  };
+
+  const deleteRow = (rowId) => {
+    if (!rowId) return;
+    setDeleteConfirmation({
+      ids: [rowId],
+      message: ["testimonials", "slider"].includes(activeDashboardView)
+        ? "This testimonial will be removed from the public slider."
+        : "This record will be permanently removed from the system.",
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmation) return;
+    const idsToDelete = deleteConfirmation.ids;
+    setDeleteConfirmation(null);
+    const ok = await deleteRows(idsToDelete);
+    if (ok)
+      showAdminToast(
+        "success",
+        "Rows deleted",
+        `${idsToDelete.length} record(s) were removed successfully.`,
+      );
+  };
+
+  const viewRow = (row) => {
+    if (!row) return;
+    const rowData =
+      row.details ||
+      (Array.isArray(row.columns)
+        ? row.columns.reduce(
+            (acc, value, index) => {
+              const key =
+                dashboardTableColumns[activeDashboardView]?.[index] ||
+                `column_${index + 1}`;
+              acc[key] = value;
+              return acc;
+            },
+            { id: row.id },
+          )
+        : row);
+    setViewingRow(rowData);
+  };
+
+  const [editingStoreProductId, setEditingStoreProductId] = useState(null);
+  const [publishedProductLink, setPublishedProductLink] = useState("");
+
+  const getProductLink = (product) => {
+    const slug = encodeURIComponent(
+      String(product?.title || product?.id || "product")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, ""),
+    );
+    const version = product?.updatedAt || product?.updated_at || product?.cover || product?.cover_url || product?.id || "1";
+    const productLink = new URL(`/shop/${slug}`, window.location.origin);
+    productLink.searchParams.set("v", String(version));
+    productLink.searchParams.set("share", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    return productLink.toString();
+  };
+
+  const copyPublishedProductLink = async () => {
+    if (!publishedProductLink) return;
+    try {
+      const freshLink = new URL(publishedProductLink, window.location.origin);
+      freshLink.searchParams.set("share", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      await navigator.clipboard.writeText(freshLink.toString());
+      showAdminToast(
+        "success",
+        "Link copied",
+        "The public product link is ready to paste on Facebook or anywhere else.",
+      );
+    } catch {
+      showAdminToast(
+        "error",
+        "Copy failed",
+        "Select the link manually and copy it to your clipboard.",
+      );
+    }
+  };
+
+  const copyProductLink = async (product) => {
+    const productLink = getProductLink(product);
+    try {
+      await navigator.clipboard.writeText(productLink);
+      showAdminToast(
+        "success",
+        "Link copied",
+        `${product.title} public link is ready to share.`,
+      );
+    } catch {
+      showAdminToast(
+        "error",
+        "Copy failed",
+        "Select the product link from the public link field and copy it manually.",
+      );
+    }
+  };
+
+  const resetStoreProductForm = () => {
+    setStoreProductForm({
+      title: "",
+      description: "",
+      price: "",
+      currency: "NGN",
+      isFree: false,
+      category: "Ebook",
+      fileUrl: "",
+      cover: "",
+      inStock: true,
+      stockCount: "",
+      releaseEnabled: false,
+      releaseAt: "",
+      closeAt: "",
+      allowAfterClose: false,
+    });
+    setReleaseSettingsOpen(false);
+    setProductFileName("");
+    setCoverFileName("");
+    setEditingStoreProductId(null);
+  };
+
+  const normalizeAdminProduct = (product = {}) => ({
+    ...product,
+    id: product.id || product.product_id,
+    title: product.title || product.name || "Untitled product",
+    description: product.description || "",
+    price: Number(product.price ?? product.amount ?? 0),
+    currency: product.currency || "NGN",
+    isFree: Boolean(product.isFree ?? product.is_free ?? false),
+    category: product.category || "Ebook",
+    fileUrl: product.fileUrl || product.file_url || "",
+    cover: product.cover || product.cover_url || "",
+    inStock: (product.inStock ?? product.in_stock ?? true) !== false,
+    stockCount: Number(product.stockCount ?? product.stock_count ?? 0),
+    releaseEnabled: Boolean(product.releaseEnabled ?? product.release_enabled ?? false),
+    releaseAt: product.releaseAt ?? product.release_at ?? null,
+    closeAt: product.closeAt ?? product.close_at ?? null,
+    allowAfterClose: Boolean(product.allowAfterClose ?? product.allow_after_close ?? false),
+  });
+
+  const persistStoreProductToSupabase = async (
+    product,
+    operation = "upsert",
+  ) => {
+    if (!product || typeof product !== "object") return false;
+    const token = session?.access_token || session?.accessToken || "";
+    if (!token) return false;
+
+    const payload = {
+      id: product.id,
+      title: product.title,
+      description: product.description || "",
+      price: Number(product.price || 0),
+      currency: product.currency || "NGN",
+      is_free: Boolean(product.isFree),
+      category: product.category || "Ebook",
+      file_url: product.fileUrl || "",
+      cover: product.cover || "",
+      in_stock: product.inStock !== false,
+      stock_count: Number(product.stockCount || 0),
+      release_enabled: Boolean(product.releaseEnabled),
+      release_at: product.releaseAt || null,
+      close_at: product.closeAt || null,
+      allow_after_close: Boolean(product.allowAfterClose),
+      status: product.status || "published",
+      published_at: product.publishedAt || product.published_at || new Date().toISOString(),
+      published_by: product.publishedBy || product.published_by || session?.user?.id || null,
+      updated_at: product.updatedAt || product.updated_at || new Date().toISOString(),
+      rating: Number(product.rating || 0),
+      reviews: Number(product.reviews || 0),
+      prime: Boolean(product.prime || false),
+    };
+
+    try {
+      if (operation === "insert") {
+        const { error: directInsertError } = await supabase
+          .from("store_products")
+          .insert(payload);
+        if (!directInsertError) return true;
+        console.warn(
+          "Direct store product insert failed, trying admin API:",
+          directInsertError.message,
+        );
+      } else if (operation === "upsert") {
+        const { data: directUpdateData, error: directUpdateError } = await supabase
+          .from("store_products")
+          .update(payload)
+          .eq("id", product.id)
+          .select()
+          .maybeSingle();
+        if (!directUpdateError && directUpdateData) return true;
+        console.warn(
+          "Direct store product update did not persist, trying admin API:",
+          directUpdateError?.message || "No updated row returned",
+        );
+      }
+
+      const requestBody = {
+        action:
+          operation === "delete"
+            ? "delete"
+            : operation === "insert"
+              ? "insert"
+              : "update",
+        table: "store_products",
+        payload: [payload],
+        match: product.id ? { id: product.id } : undefined,
+      };
+
+      if (operation === "delete") {
+        requestBody.action = "delete";
+      }
+
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        console.warn(
+          "Store product sync to Supabase failed:",
+          response.statusText,
+        );
+        if (operation === "insert") {
+          const { error: fallbackError } = await supabase
+            .from("store_products")
+            .insert(payload);
+          if (!fallbackError) return true;
+          console.warn(
+            "Direct store product insert fallback failed:",
+            fallbackError.message,
+          );
+        } else if (operation !== "delete" && product.id) {
+          const { error: fallbackError } = await supabase
+            .from("store_products")
+            .update(payload)
+            .eq("id", product.id);
+          if (!fallbackError) return true;
+          console.warn(
+            "Direct store product sync fallback failed:",
+            fallbackError.message,
+          );
+        }
+      }
+      return response.ok;
+    } catch (error) {
+      console.warn("Store product sync error:", error);
+      return false;
+    }
+  };
+
+  const handleProductFileUpload = async (fileOrEvent) => {
+    const file = fileOrEvent?.target
+      ? fileOrEvent.target.files?.[0]
+      : fileOrEvent;
+    if (!file) return;
+
+    try {
+      setProductFileUploading(true);
+      const token = session?.access_token || session?.accessToken || "";
+      const response = await fetch("/api/r2-storage-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ scope: "admin", filename: file.name, size: file.size }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Could not prepare the file upload.");
+      const uploadResponse = await fetch(payload.uploadUrl, { method: "PUT", headers: payload.headers, body: file });
+      if (!uploadResponse.ok) throw new Error("The file could not be uploaded to product storage.");
+      setStoreProductForm((current) => ({
+        ...current,
+        fileUrl: payload.fileUrl,
+      }));
+      setProductFileName(file.name);
+      showAdminToast(
+        "success",
+        "Product file uploaded",
+        "The private product file is ready to save with this product.",
+      );
+    } catch (error) {
+      console.warn("Product file upload failed:", error);
+      showAdminToast(
+        "error",
+        "File upload failed",
+        error.message || "The product file could not be uploaded.",
+      );
+    } finally {
+      setProductFileUploading(false);
+      if (fileOrEvent?.target) fileOrEvent.target.value = "";
+    }
+  };
+
+  const handleCoverFileUpload = async (fileOrEvent) => {
+    const file = fileOrEvent?.target
+      ? fileOrEvent.target.files?.[0]
+      : fileOrEvent;
+    if (!file) return;
+
+    try {
+      setCoverFileUploading(true);
+      const safeName = file.name.replace(/[^a-z0-9._-]/gi, "-");
+      const filePath = `products/covers/${Date.now()}-${safeName}`;
+      const { data, error } = await supabase.storage
+        .from("prof-upload")
+        .upload(filePath, file, {
+          upsert: false,
+          contentType: file.type || "application/octet-stream",
+        });
+      if (error) throw error;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("prof-upload")
+        .getPublicUrl(data?.path || filePath);
+      setStoreProductForm((current) => ({
+        ...current,
+        cover: publicUrlData?.publicUrl || data?.path || filePath,
+      }));
+      setCoverFileName(file.name);
+      showAdminToast(
+        "success",
+        "Cover image uploaded",
+        "The cover image is ready to save with this product.",
+      );
+    } catch (error) {
+      console.warn("Cover image upload failed:", error);
+      showAdminToast(
+        "error",
+        "Cover upload failed",
+        error.message || "The cover image could not be uploaded.",
+      );
+    } finally {
+      setCoverFileUploading(false);
+      if (fileOrEvent?.target) fileOrEvent.target.value = "";
+    }
+  };
+
+  const handleFileDragOver = (event, setDragActive) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragActive(true);
+  };
+
+  const handleFileDragLeave = (event, setDragActive) => {
+    event.preventDefault();
+    setDragActive(false);
+  };
+
+  const handleProductFileDrop = (event) => {
+    event.preventDefault();
+    setProductFileDragActive(false);
+    if (!productFileUploading)
+      handleProductFileUpload(event.dataTransfer.files?.[0]);
+  };
+
+  const handleCoverFileDrop = (event) => {
+    event.preventDefault();
+    setCoverFileDragActive(false);
+    if (!coverFileUploading)
+      handleCoverFileUpload(event.dataTransfer.files?.[0]);
+  };
+
+  const handleStoreProductSubmit = async (event) => {
+    event.preventDefault();
+    if (
+      !storeProductForm.title ||
+      !storeProductForm.description ||
+      (!storeProductForm.isFree && !storeProductForm.price)
+    )
+      return;
+    if (productFileUploading || coverFileUploading) {
+      showAdminToast(
+        "warning",
+        "Uploads still in progress",
+        "Wait for the selected files to finish uploading before saving the product.",
+      );
+      return;
+    }
+    if (storeProductForm.releaseEnabled && !storeProductForm.releaseAt) {
+      showAdminToast("warning", "Release date required", "Choose the date and time when this product should become available.");
+      return;
+    }
+    if (storeProductForm.releaseEnabled && storeProductForm.closeAt && new Date(storeProductForm.closeAt) <= new Date(storeProductForm.releaseAt)) {
+      showAdminToast("warning", "Invalid close date", "The close date and time must be after the release date and time.");
+      return;
+    }
+    if (!editingStoreProductId && !storeProductForm.fileUrl.trim()) {
+      showAdminToast(
+        "warning",
+        "Product file required",
+        "Choose a PDF or ZIP file so it can be uploaded to Supabase Storage before publishing.",
+      );
+      return;
+    }
+
+    const normalizedInStock = storeProductForm.inStock !== false;
+    const parsedStockCount = Number(storeProductForm.stockCount ?? 0);
+    const productValues = {
+      title: storeProductForm.title.trim(),
+      description: storeProductForm.description.trim(),
+      price: Number(storeProductForm.price) || 0,
+      currency: storeProductForm.currency || "NGN",
+      isFree: Boolean(storeProductForm.isFree),
+      category: storeProductForm.category || "Ebook",
+      fileUrl: storeProductForm.fileUrl.trim() || "",
+      cover: storeProductForm.cover.trim() || "",
+      inStock: normalizedInStock,
+      stockCount: normalizedInStock
+        ? Number.isFinite(parsedStockCount) && parsedStockCount >= 0
+          ? parsedStockCount
+          : 1
+        : 0,
+      releaseEnabled: Boolean(storeProductForm.releaseEnabled),
+      releaseAt: storeProductForm.releaseEnabled ? toIsoDateTime(storeProductForm.releaseAt) : null,
+      closeAt: storeProductForm.releaseEnabled ? toIsoDateTime(storeProductForm.closeAt) : null,
+      allowAfterClose: Boolean(storeProductForm.releaseEnabled && storeProductForm.allowAfterClose),
+      status: "published",
+      publishedAt: new Date().toISOString(),
+      publishedBy: session?.user?.id || null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (editingStoreProductId) {
+      const updatedProducts = (
+        Array.isArray(storeProducts) ? storeProducts : []
+      ).map((product) =>
+        product.id === editingStoreProductId
+          ? { ...product, ...productValues }
+          : product,
+      );
+      const targetProduct = updatedProducts.find(
+        (product) => product.id === editingStoreProductId,
+      ) || { id: editingStoreProductId, ...productValues };
+      const persisted = await persistStoreProductToSupabase(
+        targetProduct,
+        "upsert",
+      );
+      if (!persisted) {
+        showAdminToast(
+          "error",
+          "Product was not updated",
+          "Supabase could not save this product. Your changes are still in the editor.",
+        );
+        return;
+      }
+      setStoreProducts(updatedProducts.map(normalizeAdminProduct));
+      resetStoreProductForm();
+      setPublishedProductLink(
+        getProductLink({ ...targetProduct, ...productValues }),
+      );
+      showAdminToast(
+        "success",
+        "Product updated",
+        `${productValues.title} has been updated on the public store.`,
+      );
+    } else {
+      const newProduct = {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        ...productValues,
+      };
+      const persisted = await persistStoreProductToSupabase(
+        newProduct,
+        "insert",
+      );
+      if (!persisted) {
+        showAdminToast(
+          "error",
+          "Product was not saved",
+          "Supabase could not save this product. Your entries are still in the editor.",
+        );
+        return;
+      }
+      setStoreProducts((current = []) => [
+        ...(Array.isArray(current) ? current : []),
+        normalizeAdminProduct(newProduct),
+      ]);
+      setPublishedProductLink(getProductLink(newProduct));
+      showAdminToast(
+        "success",
+        "Product saved",
+        `${newProduct.title} is now available in the digital store.`,
+      );
+    }
+
+    resetStoreProductForm();
+  };
+
+  const handleEditStoreProduct = (product) => {
+    if (!product) return;
+    setActiveDashboardView("commerce");
+    setCommerceSubTab("storefront");
+    setEditingStoreProductId(product.id);
+    const normalizedProduct = normalizeAdminProduct(product);
+    setStoreProductForm({
+      title: normalizedProduct.title,
+      description: normalizedProduct.description,
+      price: normalizedProduct.price,
+      currency: normalizedProduct.currency,
+      isFree: normalizedProduct.isFree,
+      category: normalizedProduct.category,
+      fileUrl: normalizedProduct.fileUrl,
+      cover: normalizedProduct.cover,
+      inStock: normalizedProduct.inStock,
+      stockCount:
+        normalizedProduct.stockCount > 0
+          ? normalizedProduct.stockCount
+          : "",
+      releaseEnabled: normalizedProduct.releaseEnabled,
+      releaseAt: toDateTimeLocalValue(normalizedProduct.releaseAt),
+      closeAt: toDateTimeLocalValue(normalizedProduct.closeAt),
+      allowAfterClose: normalizedProduct.allowAfterClose,
+    });
+    setReleaseSettingsOpen(normalizedProduct.releaseEnabled);
+    setProductFileName(getStoredFileName(normalizedProduct.fileUrl));
+    setCoverFileName(getStoredFileName(normalizedProduct.cover));
+    window.requestAnimationFrame(() => {
+      productEditorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      productEditorRef.current?.querySelector("input")?.focus();
+    });
+  };
+
+  const toggleStoreProductAvailability = async (productId) => {
+    const nextProducts = (
+      Array.isArray(storeProducts) ? storeProducts : []
+    ).map((product) => {
+      if (product.id !== productId) return product;
+      const nextInStock = product.inStock === false;
+      return {
+        ...product,
+        inStock: nextInStock,
+        stockCount: nextInStock
+          ? Math.max(Number(product.stockCount || 0), 1)
+          : 0,
+      };
+    });
+    setStoreProducts(nextProducts);
+
+    const targetProduct = nextProducts.find(
+      (product) => product.id === productId,
+    );
+    if (targetProduct) {
+      const persisted = await persistStoreProductToSupabase(targetProduct, "upsert");
+      if (!persisted) {
+        showAdminToast("error", "Availability was not saved", "The product status could not be saved. Please try again.");
+        return;
+      }
+      showAdminToast("success", "Product availability updated", targetProduct.inStock ? "The product is available again." : "The product is now out of sale.");
+    }
+  };
+
+  const updateStoreProductReviewStatus = async (product, status, verification) => {
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "product_review", payload: { id: product.id, status, ...verification } }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showAdminToast("error", "Product review failed", payload.error || "The product review status could not be saved.");
+      return;
+    }
+    const updated = payload.data || { ...product, status, ...verification };
+    setStoreProducts((current) => current.map((item) => item.id === product.id ? { ...item, ...updated } : item));
+    setSelectedVendor((current) => current?.id === selectedVendor?.id ? { ...current, products: (current.products || []).map((item) => item.id === product.id ? { ...item, ...updated } : item) } : current);
+    setProductReviewModal((current) => current?.id === product.id ? { ...current, ...updated, cover: resolveProductCover(updated) } : current);
+    showAdminToast(payload.schemaWarning ? "info" : "success", "Product review updated", payload.schemaWarning || `${product.title} is now ${status}.`);
+  };
+
+  const requestProductReviewAgain = async (product) => {
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "product_review", payload: { id: product.id, status: "in_review", review_again: true } }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showAdminToast("error", "Review request failed", payload.error || "The vendor could not be notified.");
+      return;
+    }
+    const updated = payload.data || { ...product, status: "in_review", name_verified: false, description_verified: false, cover_verified: false, attachment_verified: false, amount_verified: false };
+    setSelectedVendor((current) => current?.id === selectedVendor?.id ? { ...current, products: (current.products || []).map((item) => item.id === product.id ? { ...item, ...updated } : item) } : current);
+    setProductReviewModal((current) => current?.id === product.id ? { ...current, ...updated, cover: resolveProductCover(updated) } : current);
+    showAdminToast("success", "Vendor notified", `${product.title} was sent back for review.`);
+  };
+
+  const openProductReview = async (product) => {
+    setProductReviewModal({ ...product, cover: resolveProductCover(product), filePreviewUrl: "", filePreviewLoading: Boolean(product.file_url && (product.vendor_type || "books") === "books") });
+    if (!product.file_url || (product.vendor_type || "books") !== "books") {
+      setProductReviewModal((current) => current ? { ...current, filePreviewLoading: false, filePreviewError: (product.vendor_type || "books") === "books" ? "This product has no book attachment." : "" } : current);
+      return;
+    }
+    const token = session?.access_token || session?.accessToken || "";
+    const response = await fetch("/api/admin-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: "product_file_signed_url", match: { id: product.id } }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setProductReviewModal((current) => current ? { ...current, filePreviewUrl: response.ok ? payload.signedUrl || "" : "", filePreviewLoading: false, filePreviewError: response.ok ? "" : payload.error || "Book preview unavailable." } : current);
+  };
+
+  const handleDeleteStoreProduct = async (productId) => {
+    if (!productId) return;
+    const productToDelete = (
+      Array.isArray(storeProducts) ? storeProducts : []
+    ).find((product) => product.id === productId);
+    setStoreProducts((current = []) =>
+      (Array.isArray(current) ? current : []).filter(
+        (product) => product.id !== productId,
+      ),
+    );
+    if (editingStoreProductId === productId) {
+      resetStoreProductForm();
+    }
+
+    if (productToDelete) {
+      await persistStoreProductToSupabase(
+        { ...productToDelete, id: productToDelete.id },
+        "delete",
+      );
+    }
+    showAdminToast(
+      "success",
+      "Product removed",
+      "That product has been removed from the storefront and shop pages.",
+    );
+  };
+
+  const deleteTestPurchases = async () => {
+    const token = session?.access_token || session?.accessToken || "";
+    if (!token)
+      return showAdminToast(
+        "error",
+        "Authentication required",
+        "Sign in again before deleting test purchases.",
+      );
+    const testCount = shopOrders.filter(
+      (order) => order.paymentMode === "test",
+    ).length;
+    if (!testCount)
+      return showAdminToast(
+        "info",
+        "No test purchases",
+        "No purchases marked as Paystack test mode were found. Live purchases were not changed.",
+      );
+    if (
+      !window.confirm(
+        `Delete ${testCount} test purchase${testCount === 1 ? "" : "s"}? Live purchases will not be affected.`,
+      )
+    )
+      return;
+    try {
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "delete_test_shop_orders" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(result.error || "Test purchases could not be deleted.");
+      await refreshAdminData();
+      showAdminToast(
+        "success",
+        "Test purchases deleted",
+        `${testCount} test purchase${testCount === 1 ? "" : "s"} removed. Live purchases were preserved.`,
+      );
+    } catch (error) {
+      showAdminToast("error", "Delete failed", error.message);
+    }
+  };
+
+  const confirmDeleteStoreProduct = (product) => {
+    if (!product) return;
+    setProductDeleteTarget(product);
+  };
+
+  const printViewingRow = () => {
+    window.print();
+  };
+
+  const adminFieldStyle = {
+    width: "100%",
+    maxWidth: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+    display: "block",
+    border: "1px solid #d1d5db",
+    borderRadius: "10px",
+    padding: "11px 12px",
+    fontSize: "0.95rem",
+    fontFamily: "inherit",
+    background: "#f9fafb",
+  };
+
+  const getYoutubeVideoId = (url) => {
+    if (!url) return "";
+    try {
+      const parsed = new URL(url);
+      const hostname = parsed.hostname.replace(/^www\./, "");
+      if (hostname === "youtu.be") return parsed.pathname.slice(1).split("/")[0];
+      if (hostname === "youtube.com" || hostname === "m.youtube.com") {
+        return parsed.searchParams.get("v") || parsed.pathname.match(/\/(?:shorts|embed)\/([^/]+)/)?.[1] || "";
+      }
+    } catch (error) {
+      return "";
+    }
+    return "";
+  };
+
+  const workspaceDraftStorageKey = session?.user?.id
+    ? `paz-admin-workspace-draft-v1:${session.user.id}`
+    : "";
+  const workspaceDraft = {
+    version: 1,
+    dashboard: {
+      activeDashboardView,
+      commerceSubTab,
+      paymentHistoryTab,
+      tableFilters,
+      selectedRowIds,
+      storeProductForm,
+      editingStoreProductId,
+      releaseSettingsOpen,
+      productFileName,
+      coverFileName,
+      vendorTab,
+      vendorSearch,
+      adminAdForm,
+      supportReplyDrafts,
+      youtubeEditingId,
+      youtubeEditDraft,
+    },
+    app: {
+      selectedAdminTab: props.selectedAdminTab,
+      editTarget: props.editTarget,
+      formTitle: props.formTitle,
+      formSubtitle: props.formSubtitle,
+      formDesc: props.formDesc,
+      formMetric: props.formMetric,
+      socialEditTarget: props.socialEditTarget,
+      socialPreviewTitle: props.socialPreviewTitle,
+      socialPreviewSummary: props.socialPreviewSummary,
+      socialPreviewBadgeText: props.socialPreviewBadgeText,
+      socialPreviewTimestamp: props.socialPreviewTimestamp,
+      socialPreviewUrl: props.socialPreviewUrl,
+      socialPreviewEmbedUrl: props.socialPreviewEmbedUrl,
+      privacyContent: props.privacyContent,
+      termsContent: props.termsContent,
+      faqContent: props.faqContent,
+      testimonialAuthor: props.testimonialAuthor,
+      testimonialOrigin: props.testimonialOrigin,
+      testimonialText: props.testimonialText,
+      testimonialEditIndex: props.testimonialEditIndex,
+      programForm: props.programForm,
+      tempMonthlyFee: props.tempMonthlyFee,
+    },
+  };
+  const serializedWorkspaceDraft = JSON.stringify(workspaceDraft);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || loading || !isAdmin || !workspaceDraftStorageKey || workspaceDraftLoadedFor === workspaceDraftStorageKey) return;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(workspaceDraftStorageKey) || "null");
+      if (saved?.version === 1) {
+        const dashboard = saved.dashboard || {};
+        const app = saved.app || {};
+        const restoreValue = (source, key, setter) => {
+          if (Object.prototype.hasOwnProperty.call(source, key) && typeof setter === "function") setter(source[key]);
+        };
+
+        if (typeof dashboard.activeDashboardView === "string") setActiveDashboardView(dashboard.activeDashboardView);
+        if (typeof dashboard.commerceSubTab === "string") setCommerceSubTab(dashboard.commerceSubTab);
+        if (typeof dashboard.paymentHistoryTab === "string") setPaymentHistoryTab(dashboard.paymentHistoryTab);
+        if (dashboard.tableFilters && typeof dashboard.tableFilters === "object") setTableFilters(dashboard.tableFilters);
+        if (Array.isArray(dashboard.selectedRowIds)) setSelectedRowIds(dashboard.selectedRowIds);
+        if (dashboard.storeProductForm && typeof dashboard.storeProductForm === "object") setStoreProductForm((current) => ({ ...current, ...dashboard.storeProductForm }));
+        if (dashboard.editingStoreProductId === null || typeof dashboard.editingStoreProductId === "string") setEditingStoreProductId(dashboard.editingStoreProductId);
+        if (typeof dashboard.releaseSettingsOpen === "boolean") setReleaseSettingsOpen(dashboard.releaseSettingsOpen);
+        if (typeof dashboard.productFileName === "string") setProductFileName(dashboard.productFileName);
+        if (typeof dashboard.coverFileName === "string") setCoverFileName(dashboard.coverFileName);
+        if (typeof dashboard.vendorTab === "string") setVendorTab(dashboard.vendorTab);
+        if (typeof dashboard.vendorSearch === "string") setVendorSearch(dashboard.vendorSearch);
+        if (dashboard.adminAdForm && typeof dashboard.adminAdForm === "object") setAdminAdForm((current) => ({ ...current, ...dashboard.adminAdForm }));
+        if (dashboard.supportReplyDrafts && typeof dashboard.supportReplyDrafts === "object") setSupportReplyDrafts(dashboard.supportReplyDrafts);
+        if (typeof dashboard.youtubeEditingId === "string" || dashboard.youtubeEditingId === null) setYoutubeEditingId(dashboard.youtubeEditingId);
+        if (dashboard.youtubeEditDraft && typeof dashboard.youtubeEditDraft === "object") setYoutubeEditDraft((current) => ({ ...current, ...dashboard.youtubeEditDraft }));
+
+        restoreValue(app, "selectedAdminTab", props.setSelectedAdminTab);
+        restoreValue(app, "editTarget", props.setEditTarget);
+        restoreValue(app, "formTitle", props.setFormTitle);
+        restoreValue(app, "formSubtitle", props.setFormSubtitle);
+        restoreValue(app, "formDesc", props.setFormDesc);
+        restoreValue(app, "formMetric", props.setFormMetric);
+        restoreValue(app, "socialEditTarget", props.setSocialEditTarget);
+        restoreValue(app, "socialPreviewTitle", props.setSocialPreviewTitle);
+        restoreValue(app, "socialPreviewSummary", props.setSocialPreviewSummary);
+        restoreValue(app, "socialPreviewBadgeText", props.setSocialPreviewBadgeText);
+        restoreValue(app, "socialPreviewTimestamp", props.setSocialPreviewTimestamp);
+        restoreValue(app, "socialPreviewUrl", props.setSocialPreviewUrl);
+        restoreValue(app, "socialPreviewEmbedUrl", props.setSocialPreviewEmbedUrl);
+        restoreValue(app, "privacyContent", props.setPrivacyContent);
+        restoreValue(app, "termsContent", props.setTermsContent);
+        restoreValue(app, "faqContent", props.setFaqContent);
+        restoreValue(app, "testimonialAuthor", props.setTestimonialAuthor);
+        restoreValue(app, "testimonialOrigin", props.setTestimonialOrigin);
+        restoreValue(app, "testimonialText", props.setTestimonialText);
+        restoreValue(app, "testimonialEditIndex", props.setTestimonialEditIndex);
+        restoreValue(app, "programForm", props.setProgramForm);
+        restoreValue(app, "tempMonthlyFee", props.setTempMonthlyFee);
+      }
+    } catch {
+      window.sessionStorage.removeItem(workspaceDraftStorageKey);
+    }
+    setWorkspaceDraftLoadedFor(workspaceDraftStorageKey);
+  }, [mode, loading, isAdmin, workspaceDraftStorageKey, workspaceDraftLoadedFor, props]);
+
+  useEffect(() => {
+    if (mode !== "dashboard" || !isAdmin || !workspaceDraftStorageKey || workspaceDraftLoadedFor !== workspaceDraftStorageKey) return;
+    try {
+      window.sessionStorage.setItem(workspaceDraftStorageKey, serializedWorkspaceDraft);
+    } catch {
+    }
+  }, [mode, isAdmin, workspaceDraftStorageKey, workspaceDraftLoadedFor, serializedWorkspaceDraft]);
+
+  useEffect(() => {
+    if (!workspaceDraftStorageKey || workspaceDraftLoadedFor !== workspaceDraftStorageKey) return undefined;
+    const saveScrollPosition = () => {
+      try {
+        const saved = JSON.parse(window.sessionStorage.getItem(workspaceDraftStorageKey) || "{}");
+        saved.scrollY = window.scrollY;
+        window.sessionStorage.setItem(workspaceDraftStorageKey, JSON.stringify(saved));
+      } catch {
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") saveScrollPosition();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", saveScrollPosition);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", saveScrollPosition);
+    };
+  }, [workspaceDraftStorageKey, workspaceDraftLoadedFor]);
+
+  useEffect(() => {
+    if (!loading && workspaceDraftStorageKey && workspaceDraftLoadedFor === workspaceDraftStorageKey) {
+      let savedScrollY = 0;
+      try {
+        savedScrollY = Number(JSON.parse(window.sessionStorage.getItem(workspaceDraftStorageKey) || "{}").scrollY) || 0;
+      } catch {
+      }
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.scrollTo({ top: savedScrollY, behavior: "auto" })));
+    }
+  }, [loading, workspaceDraftStorageKey, workspaceDraftLoadedFor]);
+
+  if (mode === "login" && session && isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (mode === "dashboard" && adminAccessLoading) {
+    return <div className="app-preloader-overlay" role="status" aria-busy="true"><div className="app-preloader-box">Checking admin access...</div></div>;
+  }
+
+  if (mode === "dashboard" && (!session || !isAdmin)) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  if (mode === "login" && session && adminAccessLoading) {
+    return <div className="app-preloader-overlay" role="status" aria-busy="true"><div className="app-preloader-box">Checking admin access...</div></div>;
+  }
+
+  if (mode === "login" && (!session || !isAdmin)) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundImage: "linear-gradient(rgba(244, 244, 244, .72), rgba(244, 244, 244, .72)), url('/logo/logo2.jpeg')",
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+          padding: "32px 16px",
+          fontFamily: "Inter, Arial, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "520px",
+            background: "#f0f2f3",
+            border: "1px solid #d8dfe5",
+            borderRadius: "22px",
+            padding: "30px 28px 22px",
+            boxShadow: "0 18px 38px rgba(0,0,0,0.08)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: "12px",
+            }}
+          >
+            <div
+              style={{
+                width: "82px",
+                height: "82px",
+                borderRadius: "22px",
+                background: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 10px 22px rgba(0,0,0,0.08)",
+              }}
+            >
+              <img
+                src="/logo/logomain.png"
+                alt="Paz Thriving Tribe logo"
+                style={{ width: "56px", height: "56px", objectFit: "contain" }}
+              />
+            </div>
+          </div>
+
+          <div style={{ textAlign: "center", marginBottom: "20px" }}>
+            <div
+              style={{
+                margin: "0 0 8px",
+                fontSize: "0.82rem",
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "#3d3d3d",
+                fontWeight: 700,
+              }}
+            >
+              Your Webapp Admin Portal
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(2.2rem, 3vw, 3.2rem)",
+                lineHeight: 1.05,
+                color: "#111111",
+                fontWeight: 800,
+              }}
+            >
+              Admin Login
+            </h1>
+          </div>
+
+          <form
+            onSubmit={handleSignIn}
+            autoComplete="on"
+            style={{ display: "grid", gap: "18px" }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontSize: "1.05rem",
+                  fontWeight: 700,
+                  color: "#1f1f1f",
+                }}
+              >
+                Email
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "#dde8f1",
+                  border: "1px solid #c7d4e0",
+                  borderRadius: "14px",
+                  padding: "0 16px",
+                  minHeight: "62px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "1.1rem",
+                    color: "#556778",
+                    marginRight: "12px",
+                  }}
+                >
+                  ✉
+                </span>
+                <input
+                  ref={emailInputRef}
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@paztribe.org"
+                  required
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    background: "transparent",
+                    outline: "none",
+                    fontSize: "1.05rem",
+                    color: "#1d1d1d",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "8px",
+                  fontSize: "1.05rem",
+                  fontWeight: 700,
+                  color: "#1f1f1f",
+                }}
+              >
+                Password
+              </label>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  background: "#dde8f1",
+                  border: "1px solid #c7d4e0",
+                  borderRadius: "14px",
+                  padding: "0 16px",
+                  minHeight: "62px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "1.1rem",
+                    color: "#556778",
+                    marginRight: "12px",
+                  }}
+                >
+                  🔒
+                </span>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    background: "transparent",
+                    outline: "none",
+                    fontSize: "1.05rem",
+                    color: "#1d1d1d",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  style={{ border: 0, background: "transparent", padding: "6px", fontSize: "1.1rem" }}
+                >
+                  {showPassword ? "🙈" : "👁"}
+                </button>
+              </div>
+            </div>
+
+            {authError && (
+              <div
+                style={{
+                  color: "#b42318",
+                  background: "#fee4e2",
+                  border: "1px solid #fecdca",
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                  fontSize: "0.9rem",
+                  lineHeight: 1.4,
+                }}
+              >
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                border: "none",
+                cursor: loading ? "not-allowed" : "pointer",
+                color: "#fff",
+                background: "linear-gradient(135deg, #ec4a8c, #d91f75)",
+                borderRadius: "14px",
+                minHeight: "64px",
+                fontSize: "2rem",
+                fontWeight: 800,
+                boxShadow: "0 14px 24px rgba(217, 31, 117, 0.28)",
+                opacity: loading ? 0.8 : 1,
+              }}
+            >
+              {loading ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
+
+          <div
+            style={{
+              marginTop: "22px",
+              background: "#ececec",
+              border: "1px solid #d6d6d6",
+              borderRadius: "14px",
+              padding: "22px 18px",
+              textAlign: "center",
+              color: "#575757",
+              fontSize: "1.15rem",
+              lineHeight: 1.5,
+              fontWeight: 500,
+            }}
+          >
+            Enter your administrator credentials to access the dashboard.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const completedShopOrders = shopOrders.filter(
+    (order) =>
+      ["paid", "free", "completed"].includes(
+        String(order.status || "").toLowerCase(),
+      ) && String(order.paymentMode || "live").toLowerCase() !== "test",
+  );
+
+  const dashboardViews = [
+    {
+      id: "visitors",
+      label: "Visits",
+      color: "#2e7af0",
+      value: clientActivityLog.length,
+    },
+    {
+      id: "teens",
+      label: "Teens Reg",
+      color: "#f39a2b",
+      value: Math.max(applicants.length || 0, 0),
+    },
+    {
+      id: "bookings",
+      label: "Bookings",
+      color: "#16a34a",
+      value: Math.max(bookings.length || 0, 0),
+    },
+    {
+      id: "messages",
+      label: "Messages",
+      color: "#22a564",
+      value: Math.max(contactMessages.length || 0, 0),
+    },
+    {
+      id: "commerce",
+      label: "Store & Orders",
+      color: "#f59e0b",
+      value: Math.max(shopOrders.length || 0, 0),
+    },
+    {
+      id: "testimonials",
+      label: "Testimonials",
+      color: "#7c3aed",
+      value: testimonialCount ?? "—",
+    },
+    {
+      id: "slider",
+      label: "Published Slider",
+      color: "#0f766e",
+      value: Math.max(promoSlides.length || 0, 0),
+    },
+    {
+      id: "feedback",
+      label: "Parent Feedback",
+      color: "#e88767",
+      value: Math.max(parentFeedback.length || 0, 0),
+    },
+    {
+      id: "users",
+      label: "Users",
+      color: "#0f766e",
+      value: customerCount ?? "?",
+    },
+    {
+      id: "vendors",
+      label: "Vendors",
+      color: "#0f766e",
+      value: vendorCount ?? "—",
+    },
+    {
+      id: "support",
+      label: "Support Chat",
+      color: "#2563eb",
+      value: openSupportCount ?? "—",
+    },
+    {
+      id: "payment-history",
+      label: "Payment History",
+      color: "#0f766e",
+      value:
+        shopOrders.length +
+        applicants.filter(
+          (applicant) => applicant.paymentStatus || applicant.payment_status,
+        ).length +
+        bookings.filter(
+          (booking) => {
+            const status = booking.paymentStatus || booking.payment_status;
+            return status && status !== "not_required";
+          },
+        ).length,
+    },
+    {
+      id: "youtube",
+      label: "YouTube",
+      color: "#dc2626",
+      value: socialNewsFeed.filter((item) => item.platform === "YouTube").length,
+    },
+  ];
+
+  const dashboardTableColumns = {
+    visitors: ["Page", "IP address", "Device", "Location", "Visited at"],
+    teens: [
+      "Name",
+      "Email",
+      "Phone",
+      "Program",
+      "Parent",
+      "School",
+      "Session",
+      "Focus",
+      "Submitted",
+    ],
+    messages: ["Name", "Email", "Subject", "Message"],
+    bookings: [
+      "Name",
+      "Email",
+      "Phone",
+      "Program",
+      "Date",
+      "Time",
+      "Format",
+      "Notes",
+    ],
+    testimonials: ["Name", "Origin", "Testimonial", "Source"],
+    slider: ["Name", "Origin", "Testimonial", "Source"],
+    feedback: [
+      "Parent",
+      "Child",
+      "Duration",
+      "Impact",
+      "Satisfaction",
+      "Recommendation",
+      "Submitted",
+    ],
+  };
+
+  const dashboardFilterDefinitions = {
+    visitors: [{ key: "Page", label: "Page", index: 0 }],
+    teens: [
+      { key: "Program", label: "Program", index: 3 },
+      { key: "Parent", label: "Parent", index: 4 },
+    ],
+    messages: [{ key: "Subject", label: "Subject", index: 2 }],
+    bookings: [
+      { key: "Program", label: "Program", index: 3 },
+      { key: "Format", label: "Format", index: 6 },
+    ],
+    testimonials: [
+      { key: "Origin", label: "Origin", index: 1 },
+      { key: "Source", label: "Source", index: 3 },
+    ],
+    slider: [
+      { key: "Origin", label: "Origin", index: 1 },
+      { key: "Source", label: "Source", index: 3 },
+    ],
+    feedback: [
+      { key: "Duration", label: "Duration", index: 2 },
+      { key: "Impact", label: "Impact", index: 3 },
+      { key: "Satisfaction", label: "Satisfaction", index: 4 },
+      { key: "Recommendation", label: "Recommendation", index: 5 },
+    ],
+  };
+
+  const formatVisitorPage = (path) => {
+    if (path === "/") return "Home";
+    if (path === "/feedback") return "Feedback page";
+    return path;
+  };
+
+  const dashboardTableData = {
+    visitors: clientActivityLog.map((entry) => ({
+      id:
+        entry.id ||
+        `${entry.session_id || "activity"}-${entry.created_at || Date.now()}`,
+      columns: [
+        formatVisitorPage(entry.path || entry.pathname || "/"),
+        entry.ip_address || "Unavailable",
+        entry.device_type || "Unknown",
+        entry.location || "Unknown",
+        new Date(
+          entry.created_at || entry.createdAt || Date.now(),
+        ).toLocaleString(),
+      ],
+    })),
+    teens: (() => {
+      const rows = [];
+      applicants.forEach((applicant) => {
+        const baseParent = {
+          email: applicant.email || "No email",
+          phone: applicant.phone || "No phone",
+          parentName:
+            applicant.parentName || applicant.parent_or_guardian_name || "N/A",
+          submittedAt: applicant.submittedAt || applicant.created_at || null,
+        };
+
+        if (applicant.childrenDetails) {
+          try {
+            const children =
+              typeof applicant.childrenDetails === "string"
+                ? JSON.parse(applicant.childrenDetails)
+                : applicant.childrenDetails;
+            if (Array.isArray(children) && children.length > 0) {
+              children.forEach((child, idx) => {
+                rows.push({
+                  id: `${applicant.id || "app"}-${idx}`,
+                  columns: [
+                    child.child_name ||
+                      child.childName ||
+                      child.name ||
+                      "Unnamed child",
+                    baseParent.email,
+                    baseParent.phone,
+                    // always prefer per-child program; no fallback to top-level 'track'
+                    child.program_type || child.programType || "N/A",
+                    baseParent.parentName,
+                    child.school || child.schoolName || "N/A",
+                    child.preferred_session || child.preferredSession || "N/A",
+                    child.focus_area ||
+                      child.focusArea ||
+                      child.development_goals ||
+                      applicant.message ||
+                      "N/A",
+                    baseParent.submittedAt
+                      ? new Date(baseParent.submittedAt).toLocaleString()
+                      : "N/A",
+                  ],
+                });
+              });
+              return;
+            }
+          } catch (err) {
+            // fall back to single-row below
+          }
+        }
+
+        // fallback: single row per applicant
+        rows.push({
+          id:
+            applicant.id ||
+            `${applicant.email || "survey"}-${applicant.submittedAt || Date.now()}`,
+          columns: [
+            applicant.fullName || "Unnamed applicant",
+            applicant.email || "No email",
+            applicant.phone || "No phone",
+            applicant.track || "General",
+            applicant.parentName || "N/A",
+            applicant.schoolName || "N/A",
+            applicant.preferredSession || "N/A",
+            applicant.developmentGoals || applicant.message || "N/A",
+            applicant.submittedAt
+              ? new Date(applicant.submittedAt).toLocaleString()
+              : "N/A",
+          ],
+        });
+      });
+
+      return rows;
+    })(),
+    messages: contactMessages.map((message) => ({
+      id:
+        message.id ||
+        `${message.email || "message"}-${message.createdAt || Date.now()}`,
+      columns: [
+        message.name || "Unknown sender",
+        message.email || "No email",
+        message.subject || "Message",
+        message.message || "No message provided",
+      ],
+    })),
+    bookings: (bookings || []).map((b) => ({
+      id: b.id || `${b.email || "booking"}-${b.created_at || Date.now()}`,
+      columns: [
+        b.contact_name || b.contactName || "No name",
+        b.email || "No email",
+        b.phone || "No phone",
+        b.program_type || b.programType || "N/A",
+        b.preferred_date
+          ? new Date(b.preferred_date).toLocaleDateString()
+          : "N/A",
+        b.preferred_time || "N/A",
+        b.session_format || b.sessionFormat || "N/A",
+        b.notes || b.note || "N/A",
+      ],
+    })),
+    testimonials: promoSlides.map((testimonial) => ({
+      id:
+        testimonial.id ||
+        `${testimonial.title || "testimonial"}-${testimonial.createdAt || Date.now()}`,
+      columns: [
+        testimonial.title || "Anonymous",
+        testimonial.origin || "Parent",
+        testimonial.text || "No testimonial added",
+        testimonial.imageType || "Website",
+      ],
+    })),
+    slider: promoSlides.map((testimonial) => ({
+      id:
+        testimonial.id ||
+        `${testimonial.title || "testimonial"}-${testimonial.createdAt || Date.now()}`,
+      columns: [
+        testimonial.title || "Anonymous",
+        testimonial.origin || "Parent",
+        testimonial.text || "No testimonial added",
+        testimonial.imageType || "Website",
+      ],
+    })),
+    feedback: (parentFeedback || []).map((response) => ({
+      id:
+        response.id ||
+        `${response.parent_name || "feedback"}-${response.created_at || Date.now()}`,
+      details: {
+        "Parent name": formatName(response.parent_name || "No parent name"),
+        "Child name": formatName(response.child_name || "No child name"),
+        "Mentoring duration": response.mentoring_duration || "N/A",
+        "Positive changes": response.positive_changes || [],
+        "Other change": response.other_change || "N/A",
+        "Significant change": response.significant_change || "N/A",
+        "Impact rating": response.impact_rating || "N/A",
+        "Support areas": response.support_areas || [],
+        "Other support": response.other_support || "N/A",
+        "Future focus": response.future_focus || "N/A",
+        Satisfaction: response.satisfaction || "N/A",
+        "Coach relationship": response.coach_relationship || "N/A",
+        "Child comments": response.child_comments || "N/A",
+        "Development notes": response.development_notes || "N/A",
+        "Improvement suggestions": response.improvement_suggestions || "N/A",
+        Recommendation: response.recommendation || "N/A",
+        Testimonial: response.testimonial || "N/A",
+        "Submitted at": response.created_at
+          ? new Date(response.created_at).toLocaleString()
+          : "N/A",
+      },
+      columns: [
+        formatName(response.parent_name || "No parent name"),
+        formatName(response.child_name || "No child name"),
+        response.mentoring_duration || "N/A",
+        response.impact_rating || "N/A",
+        response.satisfaction || "N/A",
+        response.recommendation || "N/A",
+        response.created_at
+          ? new Date(response.created_at).toLocaleString()
+          : "N/A",
+      ],
+    })),
+  };
+
+  const activeFilterDefinitions =
+    dashboardFilterDefinitions[activeDashboardView] || [];
+  const activeFilters = tableFilters[activeDashboardView] || {};
+  const activeTableRows = dashboardTableData[activeDashboardView] || [];
+  const filteredDashboardRows = activeTableRows.filter((row) =>
+    activeFilterDefinitions.every((filter) => {
+      const selectedValue = activeFilters[filter.key];
+      if (!selectedValue) return true;
+      return (
+        String(row.columns[filter.index] ?? "").toLowerCase() ===
+        selectedValue.toLowerCase()
+      );
+    }),
+  );
+  const dashboardPageSize = 50;
+  const dashboardPageCount = Math.max(1, Math.ceil(filteredDashboardRows.length / dashboardPageSize));
+  const activeDashboardPage = Math.min(dashboardTablePage, dashboardPageCount);
+  const paginatedDashboardRows = filteredDashboardRows.slice(
+    (activeDashboardPage - 1) * dashboardPageSize,
+    activeDashboardPage * dashboardPageSize,
+  );
+  const pageRangeStart = filteredDashboardRows.length
+    ? (activeDashboardPage - 1) * dashboardPageSize + 1
+    : 0;
+  const pageRangeEnd = Math.min(activeDashboardPage * dashboardPageSize, filteredDashboardRows.length);
+  const filterOptions = activeFilterDefinitions.map((filter) => ({
+    ...filter,
+    options: Array.from(
+      new Set(
+        activeTableRows
+          .map((row) => String(row.columns[filter.index] ?? "").trim())
+          .filter(Boolean),
+      ),
+    ).sort(),
+  }));
+
+  const activeDashboardLabel =
+    dashboardViews.find((view) => view.id === activeDashboardView)?.label ||
+    "Visitors";
+  const tableDashboardViews = [
+    "visitors",
+    "teens",
+    "bookings",
+    "messages",
+    "testimonials",
+    "slider",
+    "feedback",
+  ];
+  const showDashboardTable = tableDashboardViews.includes(activeDashboardView);
+
+  const paymentProofPreview = getPaymentProofPreview(selectedOrder);
+  const openShopOrderReview = (order) => {
+    setSelectedOrder(order);
+    setTrackingDraft({
+      tracking_status: order.trackingStatus || "order_placed",
+      tracking_number: order.trackingNumber || "",
+      estimated_delivery_at: order.estimatedDeliveryAt
+        ? new Date(new Date(order.estimatedDeliveryAt).getTime() - new Date(order.estimatedDeliveryAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+        : "",
+      note: "",
+    });
+    setTrackingSaveError("");
+    setTrackingSaveNotice("");
+  };
+  const saveShopOrderTracking = async (event) => {
+    event.preventDefault();
+    if (!selectedOrder?.id) return;
+    const token = session?.access_token || session?.accessToken || "";
+    if (!token) {
+      setTrackingSaveError("Your admin session has expired. Sign in again before updating tracking.");
+      return;
+    }
+    setTrackingSaveBusy(true);
+    setTrackingSaveError("");
+    setTrackingSaveNotice("");
+    try {
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "update_shop_order_tracking",
+          match: { id: selectedOrder.id },
+          payload: {
+            tracking_status: trackingDraft.tracking_status,
+            tracking_number: trackingDraft.tracking_number,
+            estimated_delivery_at: trackingDraft.estimated_delivery_at
+              ? new Date(trackingDraft.estimated_delivery_at).toISOString()
+              : null,
+            note: trackingDraft.note,
+          },
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.data) throw new Error(result.error || "Could not save order tracking.");
+      const updatedOrder = {
+        ...selectedOrder,
+        trackingStatus: result.data.tracking_status,
+        trackingNumber: result.data.tracking_number || "",
+        estimatedDeliveryAt: result.data.estimated_delivery_at || "",
+        trackingUpdatedAt: result.data.tracking_updated_at || "",
+      };
+      setSelectedOrder(updatedOrder);
+      setShopOrders?.((orders) => orders.map((order) => order.id === updatedOrder.id ? { ...order, ...updatedOrder } : order));
+      setTrackingDraft((draft) => ({ ...draft, note: "" }));
+      setTrackingSaveNotice("Tracking update saved and added to the customer timeline.");
+    } catch (error) {
+      setTrackingSaveError(error instanceof Error ? error.message : "Could not save order tracking.");
+    } finally {
+      setTrackingSaveBusy(false);
+    }
+  };
+  const paymentHistoryRows = [
+    ...shopOrders.map((order) => ({
+      ...order,
+      service: "Store purchase",
+      reference: order.paymentReference || order.payment_reference,
+      customer: order.name,
+      amount: order.total,
+      date: order.createdAt,
+      status: order.status,
+    })),
+    ...applicants
+      .filter(
+        (applicant) => applicant.paymentStatus || applicant.payment_status,
+      )
+      .map((applicant) => ({
+        ...applicant,
+        service: "Registration",
+        reference: applicant.paymentReference || applicant.payment_reference,
+        customer: applicant.fullName || applicant.parent_or_guardian_name,
+        amount: 5000,
+        date: applicant.submittedAt || applicant.created_at,
+        status: applicant.paymentStatus || applicant.payment_status,
+      })),
+    ...bookings
+      .filter((booking) => {
+        const status = booking.paymentStatus || booking.payment_status;
+        return status && status !== "not_required";
+      })
+      .map((booking) => ({
+        ...booking,
+        service: "Booking session",
+        reference: booking.paymentReference || booking.payment_reference,
+        customer: booking.contactName || booking.contact_name,
+        amount: 5000,
+        date: booking.createdAt || booking.created_at,
+        status: booking.paymentStatus || booking.payment_status,
+      })),
+  ];
+  const bookingPaymentRows = paymentHistoryRows.filter(
+    (payment) => payment.service === "Booking session",
+  );
+  const teenPaymentRows = paymentHistoryRows.filter(
+    (payment) => payment.service === "Registration",
+  );
+  const storePaymentRows = paymentHistoryRows.filter(
+    (payment) => payment.service === "Store purchase",
+  );
+  const selectedPaymentRows =
+    paymentHistoryTab === "booking"
+      ? bookingPaymentRows
+      : paymentHistoryTab === "teens"
+        ? teenPaymentRows
+        : storePaymentRows;
+  const visiblePaymentRows = paymentReference
+    ? selectedPaymentRows.filter(
+        (payment) =>
+          String(payment.reference || "").trim() === paymentReference,
+      )
+    : selectedPaymentRows;
+
+  return (
+    <div
+      className="admin-dashboard-page"
+      style={{
+        minHeight: "100vh",
+        background: "#f1f2f4",
+        padding: "26px 20px 32px",
+        fontFamily: "Inter, Arial, sans-serif",
+      }}
+    >
+      <div
+        className="admin-dashboard-shell"
+        style={{
+          width: "100%",
+          maxWidth: "none",
+          margin: "0 auto",
+          border: "1px solid #dfe3e7",
+          borderRadius: "22px",
+          background: "#f3f2f0",
+          padding: "28px 28px 24px",
+          boxSizing: "border-box",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "16px",
+            flexWrap: "wrap",
+            marginBottom: "14px",
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(2.5rem, 3vw, 4rem)",
+                lineHeight: 1.05,
+                fontWeight: 800,
+                color: "#1d1d1d",
+              }}
+            >
+              Admin dashboard
+            </h1>
+            <p
+              style={{
+                margin: "10px 0 0",
+                fontSize: "1.1rem",
+                fontWeight: 400,
+                color: "#4b5563",
+                maxWidth: "760px",
+                lineHeight: 1.5,
+              }}
+            >
+              Overview of survey responses, contact submissions, and parent
+              testimonials.
+            </p>
+          </div>
+        </div>
+
+        <style>{`
+          .dashboard-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;justify-content:space-between;margin-top:30px}
+          .stat-card{width:100%;min-width:0;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#fff;text-align:center;box-sizing:border-box}
+          .stat-card .label{font-weight:700;font-size:0.95rem;letter-spacing:0.04em;text-transform:uppercase;opacity:0.95}
+          .stat-card .value{font-weight:900;font-size:2.4rem;margin-top:6px}
+          .youtube-monitor-card{margin-top:22px;padding:24px;background:#fff;border:1px solid #dbe3ea;border-radius:18px;box-shadow:0 12px 28px rgba(15,23,42,.07)}
+          .youtube-monitor-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid #edf1f4}
+          .youtube-monitor-eyebrow{display:inline-flex;align-items:center;gap:7px;color:#dc2626;font-size:.7rem;font-weight:850;letter-spacing:.11em;text-transform:uppercase}
+          .youtube-monitor-card h2{margin:7px 0 5px;color:#111827;font-size:1.5rem;line-height:1.15;letter-spacing:-.02em}
+          .youtube-monitor-card-header p{margin:0;color:#64748b;font-size:.9rem;line-height:1.5}
+          .youtube-monitor-status{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid #bbf7d0;border-radius:999px;background:#f0fdf4;color:#166534;font-size:.72rem;font-weight:850;white-space:nowrap}
+          .youtube-monitor-form{display:grid;grid-template-columns:minmax(180px,.85fr) minmax(240px,1.15fr) minmax(260px,1.4fr);gap:14px;align-items:start;padding:18px;border:1px solid #e8edf1;border-radius:14px;background:#f8fafc}
+          .youtube-monitor-form label{display:grid;gap:7px;color:#334155;font-size:.75rem;font-weight:850;letter-spacing:.01em}
+          .youtube-monitor-form input,.youtube-monitor-form textarea{width:100%!important;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1!important;border-radius:10px!important;padding:12px 13px!important;background:#fff!important;color:#0f172a!important;font-family:inherit!important;font-size:.9rem!important;line-height:1.35;outline:none;box-shadow:0 1px 2px rgba(15,23,42,.04);transition:border-color .2s,box-shadow .2s,background .2s}
+          .youtube-monitor-form input{min-height:46px!important}
+          .youtube-monitor-form textarea{min-height:92px!important;resize:vertical}
+          .youtube-monitor-form input::placeholder,.youtube-monitor-form textarea::placeholder{color:#94a3b8;opacity:1}
+          .youtube-monitor-form input:hover,.youtube-monitor-form textarea:hover{border-color:#94a3b8!important}
+          .youtube-monitor-form input:focus,.youtube-monitor-form textarea:focus{border-color:#dc2626!important;background:#fff!important;box-shadow:0 0 0 3px rgba(239,68,68,.13),0 2px 5px rgba(15,23,42,.06)}
+          .youtube-monitor-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;padding-top:2px}
+          .youtube-monitor-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:9px;padding:10px 14px;font:inherit;font-size:.82rem;font-weight:850;cursor:pointer;transition:transform .2s,box-shadow .2s,background .2s}
+          .youtube-monitor-actions button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 5px 12px rgba(15,23,42,.12)}
+          .youtube-monitor-secondary-button{background:#fff;color:#991b1b;border:1px solid #fecaca!important}
+          .youtube-monitor-save-button{background:#dc2626;color:#fff}
+          .youtube-monitor-actions button:disabled{cursor:wait;opacity:.6}
+          .youtube-monitor-error{display:flex;align-items:flex-start;gap:7px;margin:12px 0 0;padding:10px 12px;border:1px solid #fecaca;border-radius:10px;background:#fff1f2;color:#991b1b;font-size:.82rem;line-height:1.45}
+          .youtube-saved-list{margin-top:24px;border-top:1px solid #edf1f4;padding-top:20px}
+          .youtube-saved-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+          .youtube-saved-list-heading h3{margin:0;color:#111827;font-size:1rem}
+          .youtube-saved-list-heading span{color:#991b1b;font-size:.76rem;font-weight:800}
+          .youtube-saved-items{display:grid;gap:10px}
+          .youtube-saved-item{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 16px;border:1px solid #e5ebef;border-radius:12px;background:#fff;transition:border-color .2s,box-shadow .2s}
+          .youtube-saved-item:hover{border-color:#fca5a5;box-shadow:0 7px 16px rgba(15,23,42,.06)}
+          .youtube-saved-item-thumbnail{position:relative;width:132px;aspect-ratio:16/9;flex:0 0 132px;display:grid;place-items:center;overflow:hidden;border-radius:9px;background:#fee2e2;color:#dc2626}
+          .youtube-saved-item-thumbnail img{width:100%;height:100%;display:block;object-fit:cover}
+          .youtube-thumbnail-play{position:absolute;left:50%;top:50%;display:grid;place-items:center;width:30px;height:22px;border-radius:7px;background:#dc2626;color:#fff;transform:translate(-50%,-50%);font-size:.65rem;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+          .youtube-saved-item-copy{min-width:0}
+          .youtube-inline-edit-form{display:grid;gap:9px;width:100%}
+          .youtube-inline-edit-form label{display:grid;gap:5px;color:#334155;font-size:.72rem;font-weight:850}
+          .youtube-inline-edit-form input,.youtube-inline-edit-form textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:9px 10px;background:#fff;color:#0f172a;font:inherit;font-size:.82rem;outline:none}
+          .youtube-inline-edit-form input:focus,.youtube-inline-edit-form textarea:focus{border-color:#dc2626;box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+          .youtube-edit-button{background:#f1f5f9;color:#334155}
+          .youtube-saved-item-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+          .youtube-saved-item h4{margin:0;color:#1f2937;font-size:.94rem;line-height:1.3}
+          .youtube-saved-item p{margin:5px 0;color:#64748b;font-size:.82rem;line-height:1.45}
+          .youtube-saved-item a{display:inline-flex;align-items:center;gap:5px;color:#b91c1c;font-size:.76rem;font-weight:800;text-decoration:none}
+          .youtube-published-badge,.youtube-draft-badge{padding:3px 7px;border-radius:999px;font-size:.66rem;font-weight:800}
+          .youtube-published-badge{background:#dcfce7;color:#166534}.youtube-draft-badge{background:#fef3c7;color:#92400e}
+          .youtube-saved-item-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}
+          .youtube-saved-item-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:9px;padding:9px 10px;font:inherit;font-size:.76rem;font-weight:800;cursor:pointer;white-space:nowrap}
+          .youtube-publish-button{background:#166534;color:#fff}.youtube-unpublish-button{background:#fef3c7;color:#92400e}.youtube-delete-button{background:#fee2e2;color:#991b1b}
+          .youtube-empty-state{margin:0;color:#64748b;font-size:.85rem}
+          .dashboard-actions-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:20px}
+          .dashboard-filters{display:flex;gap:8px;align-items:center;margin-left:8px;flex-wrap:wrap}
+          .dashboard-table-wrap{overflow-x:auto;margin-top:18px;-webkit-overflow-scrolling:touch;width:100%;border-radius:14px}
+          .commerce-tab-row{display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;ms-overflow-style:none;padding-bottom:8px;border-bottom:1px solid #dfe7ef;width:100%}
+          .commerce-tab-row button{flex:1 1 0;min-width:100px}
+          .commerce-panel-shell{width:100%;max-width:none;box-sizing:border-box;overflow:hidden}
+          .commerce-input-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;width:100%;max-width:100%;box-sizing:border-box}
+          .commerce-product-list{display:grid;gap:12px}
+          .commerce-product-card{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:center;background:linear-gradient(180deg,#ffffff,#f8fafc);border:1px solid #e2e8f0;border-radius:16px;padding:12px 14px;box-shadow:0 8px 18px rgba(15,23,42,0.04)}
+          .commerce-product-media{width:96px;height:96px;border-radius:14px;overflow:hidden;background:#f1f5f9;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center}
+          .commerce-product-media img{width:100%;height:100%;object-fit:cover;display:block}
+          .commerce-product-meta{min-width:0}
+          .commerce-product-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+          .commerce-product-actions button{min-width:72px}
+          .vendor-monitor-list{display:grid;grid-template-columns:1fr;gap:12px}
+          .vendor-monitor-card{background:#fff;box-shadow:0 6px 18px rgba(15,23,42,.04)}
+          .vendor-monitor-card-header{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px}
+          .vendor-monitor-card-header-clickable{cursor:pointer}
+          .vendor-monitor-card-header-clickable:focus-visible{outline:3px solid rgba(15,118,110,.35);outline-offset:-3px}
+          .vendor-monitor-card-meta{min-width:0;overflow-wrap:anywhere}
+          .vendor-monitor-card-counts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:.72rem;font-weight:800;color:#0f766e}
+          .vendor-monitor-card-counts span,.vendor-monitor-card-counts strong{padding:4px 7px;border-radius:999px;background:#f0fdfa;border:1px solid #ccfbf1;white-space:nowrap}
+          .vendor-monitor-card-counts strong{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+          .vendor-monitor-card-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+          .vendor-monitor-card-actions button{min-height:38px;white-space:nowrap}
+          .vendor-monitor-action-icon{margin-right:6px}
+          .vendor-monitor-sales{margin:0 14px 14px;padding:11px 12px;border:1px solid #dbe7df;border-radius:10px;background:#f8fffb}
+          .vendor-monitor-sale-row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:#475569;font-size:.82rem}
+          .vendor-monitor-profile-panel{min-width:0;overflow:hidden}
+          .vendor-monitor-profile-form{min-width:0}
+          .vendor-monitor-profile-form input,.vendor-monitor-profile-form textarea{width:100%;max-width:100%;box-sizing:border-box;min-width:0}
+          .vendor-monitor-profile-details{min-width:0;overflow-wrap:anywhere}
+          .vendor-monitor-profile-columns{min-width:0}
+          .view-modal-content{max-width:100%;box-sizing:border-box}
+          .order-review-columns{min-width:0}
+          .delivery-item-upload input{font-size:.82rem}
+          .table{min-width:1400px;width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:14px}
+          .table th,.table td{padding:12px 14px;text-align:left;vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .table td{max-width:200px}
+          .table th:last-child{position:relative;background:#f8fafc;border-left:1px solid #e5e7eb;text-align:center;max-width:none;min-width:120px;padding-right:16px}
+          .table td:last-child{position:relative;background:#fff;border-left:1px solid #f3f4f6;text-align:center;padding-right:16px}
+          .table tbody tr:hover td:last-child{background:#fff}
+          .admin-toast{position:fixed;right:20px;bottom:22px;z-index:21000;max-width:420px;width:min(420px,calc(100vw - 24px));max-height:min(90dvh,520px);box-sizing:border-box;background:#111827;color:#fff;border-radius:14px;box-shadow:0 28px 50px rgba(15,23,42,.22);border:1px solid rgba(255,255,255,.08);overflow:auto;overflow-wrap:anywhere}
+          .admin-toast[data-type='success']{background:#14532d;border-color:rgba(134,239,172,.3)}
+          .admin-toast[data-type='error']{background:#7f1d1d;border-color:rgba(254,202,202,.3)}
+          .admin-toast[data-type='warning']{background:#78350f;border-color:rgba(253,224,71,.3)}
+          .admin-toast-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px 8px}
+          .admin-toast-content{display:flex;align-items:flex-start;gap:10px;min-width:0}
+          .admin-toast-icon{flex:0 0 auto;font-size:1.1rem;line-height:1.4}
+          .admin-toast-title{font-size:0.96rem;font-weight:800;margin:0}
+          .admin-toast-close{background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;opacity:.8;padding:0}
+          .admin-toast-body{padding:2px 0 0;font-size:0.9rem;line-height:1.5;color:rgba(255,255,255,.92)}
+          .admin-toast-actions{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 14px;flex-wrap:wrap}
+          .admin-toast-btn{border:none;border-radius:999px;padding:0.55rem 0.9rem;font-weight:700;cursor:pointer}
+          .admin-toast-btn.secondary{background:rgba(255,255,255,.15);color:#fff}
+          .admin-toast-btn.danger{background:#fff1f2;color:#991b1b}
+          .delete-confirmation-backdrop{position:fixed;inset:0;z-index:13000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.52);backdrop-filter:blur(4px)}
+          .delete-confirmation-modal{width:min(440px,100%);background:#fff;border-radius:18px;padding:26px;box-shadow:0 28px 80px rgba(15,23,42,.3);border:1px solid #e5e7eb}
+          .delete-confirmation-modal h3{margin:0 0 8px;color:#111827;font-size:1.25rem}.delete-confirmation-modal p{margin:0;color:#4b5563;line-height:1.55}.delete-confirmation-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.delete-confirmation-actions button{border:0;border-radius:9px;padding:10px 16px;font-weight:700;cursor:pointer}.delete-confirmation-cancel{background:#eef2f7;color:#374151}.delete-confirmation-delete{background:#b91c1c;color:#fff}
+          .response-details-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px!important}.response-detail-row{display:block!important;border:1px solid #d7e1e7!important;border-bottom:1px solid #d7e1e7!important;break-inside:avoid}.response-detail-label{display:block!important;margin:0!important;padding:.55rem .7rem!important}.response-detail-row:nth-child(3n+1) .response-detail-label{background:#e8f0f5!important;color:#164568!important}.response-detail-row:nth-child(3n+2) .response-detail-label{background:#e6f4ee!important;color:#17634f!important}.response-detail-row:nth-child(3n) .response-detail-label{background:#fff1d2!important;color:#8a5a00!important}
+          .printable-response-card{border-top:7px solid #3f8c78!important;font-family:Georgia,'Times New Roman',serif}.response-letterhead{background:#fffdf9!important;color:#24333a!important;border-bottom:1px solid #d8e5df!important;padding:1.15rem 1.25rem!important}.response-letterhead p,.response-letterhead h3{color:#24333a!important}.response-letterhead p:first-child{color:#3f8c78!important}.response-letterhead-meta span:first-child{background:#edf5f1!important}.response-letterhead-meta span:last-child{background:#fbf4df!important}.response-details-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px!important;padding:1rem 1.25rem 1.25rem!important}.response-detail-row{border:1px solid #dce6e1!important;background:#fff!important}.response-detail-label{background:#f1f5f3!important;color:#315b4f!important;border-bottom:1px solid #dce6e1!important;letter-spacing:.04em}.response-detail-row:nth-child(3n+1) .response-detail-label,.response-detail-row:nth-child(3n+2) .response-detail-label,.response-detail-row:nth-child(3n) .response-detail-label{background:#f1f5f3!important;color:#315b4f!important}.response-detail-row>div{color:#24333a!important;line-height:1.45}
+          .testimonial-view-modal{display:flex!important;flex-direction:column;max-width:680px!important;max-height:82vh!important;overflow:hidden!important;border-radius:18px!important;background:#fff!important;border-top:7px solid #3f8c78!important}.testimonial-view-modal .response-letterhead{flex-shrink:0;background:linear-gradient(135deg,#f4faf6,#fffaf5)!important}.testimonial-view-modal .response-letterhead-meta{flex-shrink:0;margin:1rem 1.25rem 0!important}.testimonial-view-modal .response-details-grid{display:block!important;overflow-y:auto;min-height:0;flex:1;padding:1rem 1.25rem!important}.testimonial-view-modal .response-detail-row{display:block!important;margin-bottom:10px;border-radius:10px;overflow:hidden}.testimonial-view-modal .response-detail-label{display:block!important;padding:.6rem .8rem!important}.testimonial-view-modal .response-detail-row>div{padding:.85rem .9rem!important;font-family:inherit!important;line-height:1.6!important}.testimonial-view-modal .testimonial-modal-actions{flex-shrink:0;margin-top:0!important;padding:1rem 1.25rem!important;background:#fff;border-top:1px solid #dce6e1!important}
+          .testimonial-confirmation-modal{display:flex!important;flex-direction:column;max-height:calc(100vh - 40px)!important;box-sizing:border-box;overflow:hidden}.testimonial-confirmation-preview{min-height:0;overflow:hidden;display:flex;flex-direction:column}.testimonial-confirmation-quote{max-height:min(46vh,420px);overflow-y:auto;-webkit-overflow-scrolling:touch}.testimonial-confirmation-actions{flex-shrink:0;padding-top:1rem;border-top:1px solid #e2e8f0}
+          @media(max-width:640px){.testimonial-confirmation-modal{padding:20px!important}.testimonial-confirmation-quote{max-height:42vh}.testimonial-confirmation-actions{flex-wrap:wrap}.testimonial-confirmation-actions button{flex:1 1 120px}}
+          @media(max-width:640px){.view-modal-content{padding:0!important;max-height:92vh!important}.response-letterhead{align-items:flex-start!important;padding:.8rem 1rem!important}.response-letterhead h3{font-size:1.1rem!important}.response-letterhead-meta{grid-template-columns:1fr!important;margin:1rem 1rem 0!important;line-height:1.7}.response-details-grid{grid-template-columns:1fr!important;padding:1rem!important}.response-details-grid>div{gap:.35rem!important}.response-details-grid label{font-size:.68rem!important}}
+          @media(max-width:720px){.order-review-columns{grid-template-columns:1fr!important;gap:12px!important}.delivery-item-upload{padding:10px!important}.delivery-item-upload input{font-size:.76rem}}
+          @media print{@page{size:A4 portrait;margin:12mm}body *{visibility:hidden!important}.view-modal-overlay,.view-modal-overlay *{visibility:visible!important}.view-modal-overlay{position:static!important;background:transparent!important;padding:0!important}.printable-response-card{position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;max-height:none!important;overflow:visible!important;padding:0!important;border:0!important;box-shadow:none!important;border-radius:0!important}.printable-response-card button,.printable-response-card i{display:none!important}.response-letterhead{border-bottom:2px solid #e88767!important}.response-details-grid{gap:6px!important;padding:10px 0!important}.response-detail-row{font-size:9pt!important;break-inside:avoid}.response-detail-label{font-size:7pt!important;padding:5px 7px!important}.response-detail-row>div{padding:5px 7px!important}}
+          @media(max-width:640px){.youtube-monitor-card{padding:15px;margin-top:14px;border-radius:14px}.youtube-monitor-card-header{display:grid;gap:12px;margin-bottom:14px;padding-bottom:14px}.youtube-monitor-card h2{font-size:1.3rem}.youtube-monitor-card-header p{font-size:.82rem}.youtube-monitor-status{justify-self:start}.youtube-monitor-form{grid-template-columns:1fr;gap:11px;padding:13px;border-radius:11px}.youtube-monitor-actions{grid-column:auto;display:grid;grid-template-columns:1fr 1fr;gap:8px}.youtube-monitor-actions button{min-width:0;padding:10px 8px;font-size:.75rem}.youtube-saved-list{margin-top:18px;padding-top:16px}.youtube-saved-item{display:grid;gap:12px;padding:13px}.youtube-saved-item-thumbnail{width:100%;max-width:none;flex-basis:auto}.youtube-saved-item-actions{justify-content:stretch}.youtube-saved-item-actions button{flex:1 1 0}.youtube-saved-item h4{font-size:.88rem}.youtube-saved-item p{font-size:.78rem}}
+          @media(min-width:900px){.stat-card{flex:1 1 calc(25% - 16px)}.stat-card .value{font-size:3rem}}
+          @media(max-width:640px){.stat-card{min-width:0!important;width:100%;min-height:98px;padding:10px 4px}.stat-card .value{font-size:1.9rem}.dashboard-actions-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:center;width:100%}.dashboard-filters{grid-column:1/-1;margin-left:0;flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding-bottom:2px}.dashboard-filters label{flex:0 0 auto}.dashboard-filters select{min-width:100px!important;width:100px}.dashboard-filters .dashboard-action-button{flex:0 0 46px}.table th,.table td{padding:10px}.table{min-width:1200px;width:100%;overflow-x:auto}.table th:last-child{position:relative;background:#f8fafc;border-left:1px solid #e5e7eb;text-align:center;max-width:none;min-width:120px}.table td:last-child{position:relative;background:#fff;border-left:1px solid #f3f4f6;text-align:center}.table tbody tr:hover td:last-child{background:#fff}.admin-toast{right:12px;left:12px;bottom:max(12px,env(safe-area-inset-bottom));width:auto;max-width:none;max-height:calc(100dvh - 24px - env(safe-area-inset-bottom));z-index:21000}.commerce-panel-shell{padding:14px 12px!important;width:100% !important;max-width:100% !important}.commerce-tab-row{padding-bottom:6px;width:100%}.commerce-tab-row button{flex:1 1 0;min-width:90px}.commerce-input-grid{grid-template-columns:1fr!important;gap:10px!important;minmax:0!important}}
+          @media(max-width:720px){.commerce-product-list{grid-template-columns:1fr;gap:12px}.commerce-product-card{grid-template-columns:96px minmax(0,1fr);align-items:start;min-height:0;padding:12px}.commerce-product-media{width:96px;height:96px}.commerce-product-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;width:100%;gap:8px}.commerce-product-actions button{flex:1 1 120px;width:auto;min-width:0;padding:9px 10px!important}.commerce-product-meta{width:100%}.commerce-product-desc{display:block;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.commerce-product-title{white-space:normal!important;line-height:1.35;font-size:0.96rem}.commerce-product-badges{margin-bottom:6px}.commerce-product-meta > div:last-child{gap:4px!important}}
+          @media(max-width:640px){.admin-dashboard-page{padding:12px 8px 24px!important}.admin-dashboard-shell{padding:16px 12px 18px!important;border-radius:16px!important}.admin-dashboard-shell h1{font-size:2rem!important}.admin-dashboard-shell h1 + p{font-size:.92rem!important;line-height:1.4}.admin-dashboard-content{margin-top:18px!important;padding:0!important}.admin-commerce-section{margin-top:12px!important;padding:12px 10px 18px!important;border-radius:14px!important}.dashboard-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat-card{min-width:0!important;width:100%;min-height:84px;padding:10px 4px}.stat-card .label{font-size:.63rem;line-height:1.1}.stat-card .value{font-size:1.55rem;margin-top:6px}.dashboard-refresh-button,.dashboard-action-button{width:46px;height:46px;padding:0!important;display:inline-grid;place-items:center}.dashboard-refresh-button span,.dashboard-action-button span{display:none}.dashboard-action-button i{margin:0;font-size:1rem}.commerce-product-list{grid-template-columns:1fr;gap:10px}.commerce-product-card{grid-template-columns:82px minmax(0,1fr);gap:10px;padding:10px}.commerce-product-media{width:82px;height:82px}.commerce-product-actions{grid-template-columns:1fr;gap:6px}.commerce-product-actions button{flex:1 1 100%;padding:9px 10px!important}.commerce-product-title{white-space:normal!important;line-height:1.3}.commerce-product-desc{display:-webkit-box}.commerce-product-badges{margin-bottom:6px}.commerce-product-meta > div:last-child{font-size:0.78rem}.commerce-form-grid{grid-template-columns:1fr!important}.commerce-cover-row{grid-template-columns:1fr!important;align-items:stretch!important}.commerce-cover-row > div:last-child{display:grid!important;grid-template-columns:1fr!important}.commerce-cover-row button{width:100%}.commerce-tab-row button{min-width:84px!important}.vendor-monitor-card-header{grid-template-columns:48px minmax(0,1fr);gap:10px;padding:12px}.vendor-monitor-card-header img{width:48px!important;height:48px!important}.vendor-monitor-card-actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;justify-content:stretch}.vendor-monitor-card-actions button{width:100%;padding:9px 7px!important;font-size:.78rem}.vendor-monitor-card-meta{font-size:.9rem}.vendor-monitor-card-meta div{line-height:1.45}.vendor-monitor-sales{margin:0 12px 12px;padding:10px}.vendor-monitor-sale-row{display:grid;gap:4px;font-size:.78rem}.vendor-monitor-sale-row span{overflow-wrap:anywhere}} 
+          .publish-testimonial-button{position:relative}.publish-testimonial-button::after{content:attr(data-tooltip);position:absolute;right:0;bottom:calc(100% + 9px);width:250px;padding:9px 11px;border-radius:6px;background:#24333a;color:#fff;font-size:.75rem;font-weight:600;line-height:1.4;text-align:left;opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .2s,transform .2s;z-index:3}.publish-testimonial-button::before{content:'';position:absolute;right:18px;bottom:calc(100% + 3px);border:6px solid transparent;border-top-color:#24333a;opacity:0;transition:opacity .2s;z-index:3}.publish-testimonial-button:hover::after,.publish-testimonial-button:hover::before,.publish-testimonial-button:focus-visible::after,.publish-testimonial-button:focus-visible::before{opacity:1;transform:translateY(0)}
+          @media(max-width:640px){.publish-testimonial-button::after{right:auto;left:0;width:210px}.publish-testimonial-button::before{right:auto;left:18px}}
+          @media(max-width:640px){
+            .vendor-monitor-card-actions button{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:9px!important}
+            .vendor-monitor-card-counts{gap:5px;margin-top:7px;font-size:.66rem}
+            .vendor-monitor-card-counts span,.vendor-monitor-card-counts strong{padding:3px 6px}
+            .vendor-monitor-action-label{display:none}
+            .vendor-monitor-action-icon{margin-right:0;font-size:.9rem}
+            .vendor-monitor-profile-panel{padding:12px!important}
+            .vendor-monitor-profile-panel h4{font-size:1rem;line-height:1.3}
+            .vendor-monitor-profile-panel>div:first-child{align-items:stretch!important}
+            .vendor-monitor-profile-panel>div:first-child button{width:100%;margin-bottom:4px}
+            .vendor-monitor-profile-details{font-size:.88rem;line-height:1.5}
+            .vendor-monitor-profile-form{padding:11px!important;margin-top:12px!important}
+            .vendor-monitor-profile-form>div{grid-template-columns:1fr!important}
+            .vendor-monitor-profile-form button{width:100%;justify-self:stretch!important}
+            .vendor-monitor-profile-columns{grid-template-columns:1fr!important;gap:10px!important}
+            .vendor-monitor-profile-columns>div{min-width:0;overflow-wrap:anywhere}
+            .vendor-monitor-profile-columns>div div{overflow-wrap:anywhere}
+            .vendor-monitor-sales{overflow:hidden}
+          }
+        `}</style>
+
+        <div className="dashboard-stats">
+          {dashboardViews.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              className="stat-card"
+              onClick={() => focusDashboardView(setActiveDashboardView, view.id)}
+              aria-label={`Open ${view.label}`}
+              style={{
+                background: view.color,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
+                border: 0,
+                cursor: "pointer",
+                font: "inherit",
+              }}
+            >
+              <div className="label">{view.label}</div>
+              <div className="value">{view.value}</div>
+            </button>
+          ))}
+        </div>
+
+        {activeDashboardView === "youtube" && (
+          <section
+            className="youtube-monitor-card"
+            aria-labelledby="youtube-monitor-card-title"
+          >
+          <div className="youtube-monitor-card-header">
+            <div>
+              <span className="youtube-monitor-eyebrow">
+                <i className="fa-brands fa-youtube" aria-hidden="true"></i>
+                YouTube monitor
+              </span>
+              <h2 id="youtube-monitor-card-title">
+                YouTube
+              </h2>
+              <p>
+                Manage the videos displayed in Teachable Moments with Coach Roseline.
+              </p>
+            </div>
+            <span className="youtube-monitor-status">
+              <i className="fa-solid fa-circle-check" aria-hidden="true"></i>
+              Live section
+            </span>
+          </div>
+
+          <form
+            className="youtube-monitor-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (youtubePendingAction) return;
+              setYoutubeActionError("");
+              setYoutubePendingAction("save");
+              try {
+                await saveYoutubeVideo({
+                  title: socialPreviewTitle,
+                  description: socialPreviewSummary,
+                  targetUrl: socialPreviewUrl,
+                });
+                showAdminToast("success", "Video saved", "The YouTube video was added to your saved list.");
+                setSocialPreviewTitle("");
+                setSocialPreviewSummary("");
+                setSocialPreviewUrl("");
+              } catch (error) {
+                setYoutubeActionError(error?.message || "The video could not be saved.");
+                showAdminToast("error", "Save failed", error?.message || "The YouTube video could not be saved.");
+                console.error("Failed saving YouTube video:", error);
+              } finally {
+                setYoutubePendingAction("");
+              }
+            }}
+          >
+            <label>
+              Video title
+              <input
+                value={socialPreviewTitle}
+                onChange={(event) => setSocialPreviewTitle(event.target.value)}
+                placeholder="Teachable Moments with Coach Roseline"
+              />
+            </label>
+            <label>
+              YouTube watch link
+              <input
+                type="url"
+                value={socialPreviewUrl}
+                onChange={(event) => setSocialPreviewUrl(event.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+                required
+              />
+            </label>
+            <label>
+              Description
+              <textarea
+                value={socialPreviewSummary}
+                onChange={(event) => setSocialPreviewSummary(event.target.value)}
+                placeholder="Describe what viewers will learn in this video."
+                rows={3}
+              />
+            </label>
+            <div className="youtube-monitor-actions">
+              <button
+                type="button"
+                className="youtube-monitor-secondary-button"
+                onClick={() => {
+                  if (youtubePendingAction) return;
+                  setSocialEditTarget("YouTube");
+                  setYoutubeActionError("");
+                  setYoutubePendingAction("metadata");
+                  fetchSocialUrlMetadata()
+                    .then(() => showAdminToast("success", "Metadata loaded", "Review the video details before saving."))
+                    .catch((error) => {
+                      setYoutubeActionError(error?.message || "Metadata could not be loaded.");
+                      showAdminToast("error", "Metadata failed", error?.message || "YouTube metadata could not be loaded.");
+                    })
+                    .finally(() => setYoutubePendingAction(""));
+                }}
+                disabled={socialMetadataLoading || Boolean(youtubePendingAction)}
+              >
+                <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                {youtubePendingAction === "metadata" ? "Loading..." : "Load metadata"}
+              </button>
+              <button type="submit" className="youtube-monitor-save-button" disabled={Boolean(youtubePendingAction)}>
+                <i className="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                {youtubePendingAction === "save" ? "Saving..." : "Save video"}
+              </button>
+            </div>
+          </form>
+          {youtubeActionError && (
+            <p className="youtube-monitor-error" role="alert">
+              <i className="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              {youtubeActionError}
+            </p>
+          )}
+
+          <div className="youtube-saved-list">
+            <div className="youtube-saved-list-heading">
+              <h3>Saved videos</h3>
+              <span>{socialNewsFeed.filter((item) => item.platform === "YouTube").length} saved</span>
+            </div>
+            {socialNewsFeed.filter((item) => item.platform === "YouTube").length === 0 ? (
+              <p className="youtube-empty-state">No saved videos yet.</p>
+            ) : (
+              <div className="youtube-saved-items">
+                {socialNewsFeed
+                  .filter((item) => item.platform === "YouTube")
+                  .map((video) => (
+                    <article className="youtube-saved-item" key={video.id || video.targetUrl}>
+                      <div className="youtube-saved-item-thumbnail">
+                        {getYoutubeVideoId(video.targetUrl) ? (
+                          <img
+                            src={`https://i.ytimg.com/vi/${getYoutubeVideoId(video.targetUrl)}/mqdefault.jpg`}
+                            alt=""
+                            loading="lazy"
+                          />
+                        ) : (
+                          <i className="fa-brands fa-youtube" aria-hidden="true"></i>
+                        )}
+                        <span className="youtube-thumbnail-play" aria-hidden="true">
+                          <i className="fa-solid fa-play"></i>
+                        </span>
+                      </div>
+                      <div className="youtube-saved-item-copy">
+                        {youtubeEditingId === video.id && (
+                          <div className="youtube-inline-edit-form">
+                            <label>
+                              Video title
+                              <input value={youtubeEditDraft.title} onChange={(event) => setYoutubeEditDraft((draft) => ({ ...draft, title: event.target.value }))} />
+                            </label>
+                            <label>
+                              YouTube link
+                              <input type="url" value={youtubeEditDraft.url} onChange={(event) => setYoutubeEditDraft((draft) => ({ ...draft, url: event.target.value }))} required />
+                            </label>
+                            <label>
+                              Description
+                              <textarea value={youtubeEditDraft.summary} onChange={(event) => setYoutubeEditDraft((draft) => ({ ...draft, summary: event.target.value }))} rows={3} />
+                            </label>
+                          </div>
+                        )}
+                        {youtubeEditingId !== video.id && (
+                          <>
+                            <div className="youtube-saved-item-title-row">
+                              <h4>{video.title || "Untitled video"}</h4>
+                              <span className={video.published ? "youtube-published-badge" : "youtube-draft-badge"}>
+                                {video.published ? "Published" : "Unpublished"}
+                              </span>
+                            </div>
+                            <p>{video.summary || "No description added."}</p>
+                            <a href={video.targetUrl} target="_blank" rel="noreferrer">
+                              <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                              Open YouTube link
+                            </a>
+                          </>
+                        )}
+                      </div>
+                      <div className="youtube-saved-item-actions">
+                        {youtubeEditingId === video.id ? (
+                          <>
+                            <button
+                              type="button"
+                              className="youtube-publish-button"
+                              disabled={Boolean(youtubePendingAction)}
+                              onClick={async () => {
+                                if (youtubePendingAction) return;
+                                setYoutubeActionError("");
+                                setYoutubePendingAction(`${video.id}:save`);
+                                try {
+                                  await saveYoutubeVideo({ id: video.id, title: youtubeEditDraft.title, description: youtubeEditDraft.summary, targetUrl: youtubeEditDraft.url });
+                                  showAdminToast("success", "Video updated", "The saved YouTube video was updated.");
+                                  setYoutubeEditingId(null);
+                                  setYoutubeEditDraft({ title: "", summary: "", url: "" });
+                                } catch (error) {
+                                  setYoutubeActionError(error?.message || "The video could not be updated.");
+                                  showAdminToast("error", "Update failed", error?.message || "The YouTube video could not be updated.");
+                                } finally {
+                                  setYoutubePendingAction("");
+                                }
+                              }}
+                            >
+                              <i className="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                              {youtubePendingAction === `${video.id}:save` ? "Saving..." : "Save changes"}
+                            </button>
+                            <button type="button" className="youtube-monitor-secondary-button" onClick={() => setYoutubeEditingId(null)} disabled={Boolean(youtubePendingAction)}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                          type="button"
+                          className="youtube-edit-button"
+                          onClick={() => {
+                            if (!video.id) {
+                              setYoutubeActionError("Refresh the dashboard before editing this saved video.");
+                              return;
+                            }
+                            setYoutubeEditingId(video.id);
+                            setYoutubeEditDraft({ title: video.title || "", summary: video.summary || "", url: video.targetUrl || "" });
+                            setYoutubeActionError("");
+                          }}
+                          disabled={Boolean(youtubePendingAction)}
+                        >
+                          <i className="fa-solid fa-pen" aria-hidden="true"></i>
+                          Edit
+                          </button>
+                        )}
+                        {youtubeEditingId !== video.id && <>
+                        <button
+                          type="button"
+                          className={video.published ? "youtube-unpublish-button" : "youtube-publish-button"}
+                          onClick={async () => {
+                            const actionKey = `${video.id || video.targetUrl}:publish`;
+                            if (youtubePendingAction) return;
+                            try {
+                              setYoutubeActionError("");
+                              setYoutubePendingAction(actionKey);
+                              await setYoutubeVideoPublished(video, !video.published);
+                              showAdminToast("success", video.published ? "Video unpublished" : "Video published", video.published ? "The video was removed from the public YouTube section." : "The video is now live in the public YouTube section.");
+                            } catch (error) {
+                              setYoutubeActionError(error?.message || "The publish status could not be updated.");
+                              showAdminToast("error", "Publish update failed", error?.message || "The video status could not be updated.");
+                              console.error("Failed updating YouTube publish status:", error);
+                            } finally {
+                              setYoutubePendingAction("");
+                            }
+                          }}
+                          disabled={Boolean(youtubePendingAction)}
+                        >
+                          <i className={`fa-solid ${video.published ? "fa-eye-slash" : "fa-bullhorn"}`} aria-hidden="true"></i>
+                          {youtubePendingAction === `${video.id || video.targetUrl}:publish` ? "Updating..." : video.published ? "Unpublish" : "Publish"}
+                        </button>
+                        <button
+                          type="button"
+                          className="youtube-delete-button"
+                          onClick={async () => {
+                            if (!window.confirm("Delete this saved YouTube video?")) return;
+                            if (youtubePendingAction) return;
+                            try {
+                              setYoutubeActionError("");
+                              setYoutubePendingAction(`${video.id || video.targetUrl}:delete`);
+                              await deleteYoutubeVideo(video);
+                              showAdminToast("success", "Video deleted", "The saved YouTube video was removed.");
+                            } catch (error) {
+                              setYoutubeActionError(error?.message || "The video could not be deleted.");
+                              showAdminToast("error", "Delete failed", error?.message || "The YouTube video could not be deleted.");
+                              console.error("Failed deleting YouTube video:", error);
+                            } finally {
+                              setYoutubePendingAction("");
+                            }
+                          }}
+                          disabled={Boolean(youtubePendingAction)}
+                        >
+                          <i className="fa-solid fa-trash" aria-hidden="true"></i>
+                          {youtubePendingAction === `${video.id || video.targetUrl}:delete` ? "Deleting..." : "Delete"}
+                        </button>
+                        </>}
+                      </div>
+                    </article>
+                  ))}
+              </div>
+            )}
+          </div>
+          </section>
+        )}
+
+        <div
+          ref={dashboardContentRef}
+          className="admin-dashboard-content"
+          style={{ marginTop: "26px", padding: "0 2px" }}
+        >
+          <div
+            className="admin-commerce-section"
+            style={{
+              marginTop: "18px",
+              border: "1px solid #dfe3e7",
+              borderRadius: "18px",
+              background: "#f5f5f5",
+              padding: "18px 20px 24px",
+            }}
+          >
+            {activeDashboardView === "commerce" ||
+            activeDashboardView === "payment-history" ? (
+              <>
+                {activeDashboardView === "commerce" && (
+                  <div
+                    className="commerce-tab-row"
+                    style={{ marginBottom: "22px" }}
+                  >
+                    {[
+                      { id: "storefront", label: "Store" },
+                      { id: "ads", label: "Ads" },
+                      { id: "orders", label: "Orders" },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => focusDashboardView(setCommerceSubTab, tab.id)}
+                        className="commerce-tab-button"
+                        style={{
+                          border: "1px solid #dfe7ef",
+                          background:
+                            commerceSubTab === tab.id ? "#111827" : "#fff",
+                          color: commerceSubTab === tab.id ? "#fff" : "#334155",
+                          borderRadius: "999px",
+                          padding: "9px 14px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          fontSize: "0.83rem",
+                          letterSpacing: "0.02em",
+                          whiteSpace: "nowrap",
+                          flex: "0 0 auto",
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {activeDashboardView === "commerce" &&
+                  commerceSubTab === "ads" && (
+                    <div
+                      className="commerce-panel-shell"
+                      style={{
+                        background: "#ffffff",
+                        border: "1px solid #dfe7ef",
+                        borderRadius: "20px",
+                        padding: "22px",
+                        boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+                        minWidth: 0,
+                        width: "100%",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "#0f766e",
+                          textTransform: "uppercase",
+                          letterSpacing: ".12em",
+                          fontSize: ".72rem",
+                          fontWeight: 800,
+                        }}
+                      >
+                        Promotional board
+                      </p>
+                      <h3
+                        style={{
+                          margin: "8px 0 18px",
+                          fontSize: "1.5rem",
+                          color: "#111827",
+                        }}
+                      >
+                        Manage shop ads
+                      </h3>
+                      <form
+                        onSubmit={publishAdminAd}
+                        style={{
+                          padding: "16px",
+                          background: "#f0fdfa",
+                          border: "1px solid #99f6e4",
+                          borderRadius: "14px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 2fr 2fr auto",
+                            gap: "8px",
+                            alignItems: "center",
+                          }}
+                        >
+                          <input
+                            value={adminAdForm.eyebrow}
+                            onChange={(event) =>
+                              setAdminAdForm({
+                                ...adminAdForm,
+                                eyebrow: event.target.value,
+                              })
+                            }
+                            placeholder="Ad label"
+                            style={adminFieldStyle}
+                          />
+                          <input
+                            required
+                            value={adminAdForm.headline}
+                            onChange={(event) =>
+                              setAdminAdForm({
+                                ...adminAdForm,
+                                headline: event.target.value,
+                              })
+                            }
+                            placeholder="Ad headline"
+                            style={adminFieldStyle}
+                          />
+                          <input
+                            required
+                            value={adminAdForm.productUrl}
+                            onChange={(event) =>
+                              setAdminAdForm({
+                                ...adminAdForm,
+                                productUrl: event.target.value,
+                              })
+                            }
+                            placeholder="Product link, e.g. /shop/book-name"
+                            style={adminFieldStyle}
+                          />
+                          <button
+                            type="submit"
+                            style={{
+                              border: 0,
+                              borderRadius: "9px",
+                              padding: "11px 14px",
+                              background: "#0f766e",
+                              color: "#fff",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Publish
+                          </button>
+                        </div>
+                      </form>
+                      <p
+                        style={{
+                          margin: "14px 0",
+                          color: "#64748b",
+                          fontSize: ".84rem",
+                        }}
+                      >
+                        Ads from the main admin and approved vendors rotate
+                        above the shop search bar. Each ad should point to a
+                        product page.
+                      </p>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: "10px",
+                          marginTop: "16px",
+                        }}
+                      >
+                        {adminAds.length ? (
+                          adminAds.map((ad) => (
+                            <div
+                              key={ad.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "12px",
+                                flexWrap: "wrap",
+                                padding: "12px",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: "10px",
+                              }}
+                            >
+                              <div style={{ minWidth: 0, flex: "1 1 320px" }}>
+                                <strong>{ad.headline}</strong>
+                                {ad.is_platform_ad && (
+                                  <span
+                                    style={{
+                                      marginLeft: "8px",
+                                      color: "#166534",
+                                      fontSize: ".72rem",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    PAZ PLATFORM AD
+                                  </span>
+                                )}
+                                <div
+                                  style={{
+                                    color: "#475569",
+                                    fontSize: ".8rem",
+                                    marginTop: "4px",
+                                  }}
+                                >
+                                  Published by: {ad.vendor_name || "Main admin"}{" "}
+                                  · Created by:{" "}
+                                  {ad.posted_by_email ||
+                                    ad.posted_by ||
+                                    "Unknown"}{" "}
+                                  · {ad.status}
+                                </div>
+                                <div
+                                  style={{
+                                    color: "#64748b",
+                                    fontSize: ".8rem",
+                                    overflowWrap: "anywhere",
+                                  }}
+                                >
+                                  {ad.product_url} ·{" "}
+                                  {ad.created_at
+                                    ? new Date(ad.created_at).toLocaleString()
+                                    : "Date unavailable"}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: "8px",
+                                  flexWrap: "wrap",
+                                  justifyContent: "flex-end",
+                                }}
+                              >
+                                {ad.vendor_id && ad.status === "pending" && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateAdStatus(ad, "approved")
+                                      }
+                                      style={{
+                                        border: 0,
+                                        borderRadius: "8px",
+                                        padding: "8px 10px",
+                                        background: "#166534",
+                                        color: "#fff",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateAdStatus(ad, "rejected")
+                                      }
+                                      style={{
+                                        border: 0,
+                                        borderRadius: "8px",
+                                        padding: "8px 10px",
+                                        background: "#b91c1c",
+                                        color: "#fff",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
+                                {ad.status === "unpublish_requested" && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateAdStatus(ad, "archived")
+                                    }
+                                    style={{
+                                      border: "1px solid #f59e0b",
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      background: "#fffbeb",
+                                      color: "#92400e",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    Approve unpublish
+                                  </button>
+                                )}
+                                {["published", "approved"].includes(
+                                  ad.status,
+                                ) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateAdStatus(ad, "archived")
+                                    }
+                                    style={{
+                                      border: "1px solid #f59e0b",
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      background: "#fffbeb",
+                                      color: "#92400e",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    Unpublish
+                                  </button>
+                                )}
+                                {["archived", "publish_requested"].includes(
+                                  ad.status,
+                                ) && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateAdStatus(ad, "published")
+                                    }
+                                    style={{
+                                      border: "1px solid #166534",
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      background: "#f0fdf4",
+                                      color: "#166534",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    {ad.status === "publish_requested"
+                                      ? "Approve publish"
+                                      : "Publish"}
+                                  </button>
+                                )}
+                                {!ad.is_platform_ad && (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteAd(ad)}
+                                    style={{
+                                      border: 0,
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      background: "#b91c1c",
+                                      color: "#fff",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p style={{ color: "#64748b" }}>
+                            No promotional ads have been submitted.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                {activeDashboardView === "commerce" &&
+                  commerceSubTab === "storefront" && (
+                    <div
+                      className="commerce-panel-shell"
+                      style={{
+                        background: "#ffffff",
+                        border: "1px solid #dfe7ef",
+                        borderRadius: "20px",
+                        padding: "22px",
+                        boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+                        minWidth: 0,
+                        width: "100%",
+                        maxWidth: "none",
+                        margin: "0 auto",
+                        boxSizing: "border-box",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "12px",
+                          marginBottom: "18px",
+                        }}
+                      >
+                        <div>
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "#f59e0b",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.12em",
+                              fontSize: "0.72rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Storefront
+                          </p>
+                          <h3
+                            style={{
+                              margin: "8px 0 0",
+                              fontSize: "1.5rem",
+                              fontWeight: 800,
+                              color: "#111827",
+                            }}
+                          >
+                            Product manager
+                          </h3>
+                        </div>
+                        <div
+                          style={{
+                            background: "#fff7ed",
+                            color: "#b45309",
+                            borderRadius: "999px",
+                            padding: "8px 12px",
+                            fontSize: "0.8rem",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {storeProducts.length} live products
+                        </div>
+                      </div>
+                      <form
+                        ref={productEditorRef}
+                        onSubmit={handleStoreProductSubmit}
+                        style={{
+                          display: "grid",
+                          gap: "12px",
+                          scrollMarginTop: "24px",
+                        }}
+                      >
+                        <div
+                          className="commerce-form-grid"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: "12px",
+                          }}
+                        >
+                          <input
+                            value={storeProductForm.title}
+                            onChange={(event) =>
+                              setStoreProductForm((current) => ({
+                                ...current,
+                                title: event.target.value,
+                              }))
+                            }
+                            placeholder="Ebook title"
+                            style={adminFieldStyle}
+                          />
+                          <CustomDropdown
+                            value={storeProductForm.category}
+                            onChange={(value) =>
+                              setStoreProductForm((current) => ({
+                                ...current,
+                                category: value,
+                              }))
+                            }
+                            ariaLabel="Product type"
+                            options={productCategories.map((category) => ({
+                              value: category,
+                              label: category,
+                            }))}
+                          />
+                        </div>
+                        <textarea
+                          value={storeProductForm.description}
+                          onChange={(event) =>
+                            setStoreProductForm((current) => ({
+                              ...current,
+                              description: event.target.value,
+                            }))
+                          }
+                          placeholder="Description"
+                          style={{
+                            ...adminFieldStyle,
+                            minHeight: "90px",
+                            resize: "vertical",
+                          }}
+                        />
+                        <ProductDescriptionAssist
+                          productTitle={storeProductForm.title}
+                          category={storeProductForm.category}
+                          currentDescription={storeProductForm.description}
+                          accessToken={session?.access_token || session?.accessToken || ""}
+                          onUseDraft={(description) => setStoreProductForm((current) => ({ ...current, description }))}
+                        />
+                        <div
+                          className="commerce-form-grid"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: "12px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0, 1fr) 92px",
+                              gap: "8px",
+                              minWidth: 0,
+                              alignItems: "start",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "relative",
+                                minWidth: 0,
+                                display: "flex",
+                                alignItems: "center",
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  position: "absolute",
+                                  inset: "0 auto 0 0",
+                                  width: "34px",
+                                  display: "grid",
+                                  placeItems: "center",
+                                  color: "#475569",
+                                  fontWeight: 800,
+                                  pointerEvents: "none",
+                                  zIndex: 1,
+                                }}
+                              >
+                                {currencySymbols[storeProductForm.currency] ||
+                                  storeProductForm.currency}
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                pattern="[0-9]*[.]?[0-9]*"
+                                value={storeProductForm.price}
+                                onChange={(event) =>
+                                  setStoreProductForm((current) => ({
+                                    ...current,
+                                    price: event.target.value
+                                      .replace(/[^0-9.]/g, "")
+                                      .replace(/(\..*)\./g, "$1"),
+                                  }))
+                                }
+                                placeholder="Enter amount"
+                                disabled={storeProductForm.isFree}
+                                aria-label={`Amount in ${storeProductForm.currency}`}
+                                style={{
+                                  ...adminFieldStyle,
+                                  height: "46px",
+                                  paddingLeft: "34px",
+                                  fontWeight: 700,
+                                  color: "#111827",
+                                }}
+                              />
+                            </div>
+                            <CustomDropdown
+                              value={storeProductForm.currency}
+                              onChange={(nextCurrency) =>
+                                setStoreProductForm((current) => {
+                                  const previousRate =
+                                    currencyRatesToNgn[current.currency] || 1;
+                                  const nextRate =
+                                    currencyRatesToNgn[nextCurrency] || 1;
+                                  const convertedPrice = current.price
+                                    ? Math.round(
+                                        ((Number(current.price) *
+                                          previousRate) /
+                                          nextRate) *
+                                          100,
+                                      ) / 100
+                                    : current.price;
+                                  return {
+                                    ...current,
+                                    currency: nextCurrency,
+                                    price: convertedPrice,
+                                  };
+                                })
+                              }
+                              ariaLabel="Product currency"
+                              options={productCurrencies.map((currency) => ({
+                                value: currency,
+                                label: currency,
+                              }))}
+                            />
+                          </div>
+                          <div
+                            style={{ display: "grid", gap: "8px", minWidth: 0 }}
+                          >
+                            <label
+                              style={{
+                                color: "#475569",
+                                fontSize: "0.78rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              Product file
+                            </label>
+                            <label
+                              onDragOver={(event) =>
+                                handleFileDragOver(
+                                  event,
+                                  setProductFileDragActive,
+                                )
+                              }
+                              onDragLeave={(event) =>
+                                handleFileDragLeave(
+                                  event,
+                                  setProductFileDragActive,
+                                )
+                              }
+                              onDrop={handleProductFileDrop}
+                              style={{
+                                display: "grid",
+                                placeItems: "center",
+                                gap: "4px",
+                                minHeight: "58px",
+                                padding: "8px",
+                                boxSizing: "border-box",
+                                border: `1px dashed ${productFileDragActive ? "#f97316" : "#cbd5e1"}`,
+                                borderRadius: "10px",
+                                background: productFileDragActive
+                                  ? "#fff7ed"
+                                  : "#f8fafc",
+                                color: "#475569",
+                                cursor: productFileUploading
+                                  ? "wait"
+                                  : "pointer",
+                                textAlign: "center",
+                                transition:
+                                  "border-color 160ms ease, background 160ms ease",
+                              }}
+                            >
+                              <input
+                                type="file"
+                                accept=".pdf,.zip,application/pdf,application/zip"
+                                onChange={handleProductFileUpload}
+                                disabled={productFileUploading}
+                                style={{ display: "none" }}
+                              />
+                              <span style={{ fontWeight: 700 }}>
+                                {productFileDragActive
+                                  ? "Drop product file here"
+                                  : "Drag PDF or ZIP here, or click to choose"}
+                              </span>
+                            </label>
+                            {productFileUploading && (
+                              <span
+                                style={{
+                                  color: "#64748b",
+                                  fontSize: "0.78rem",
+                                }}
+                              >
+                                Uploading product file...
+                              </span>
+                            )}
+                            {!productFileUploading && productFileName && (
+                              <span
+                                style={{
+                                  color: "#64748b",
+                                  fontSize: "0.78rem",
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                Attached: {productFileName}
+                                <br />
+                                Storage path: product-files/
+                                {storeProductForm.fileUrl}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            color: "#334155",
+                            fontWeight: 700,
+                            fontSize: "0.88rem",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={storeProductForm.isFree}
+                            onChange={(event) =>
+                              setStoreProductForm((current) => ({
+                                ...current,
+                                isFree: event.target.checked,
+                                price: event.target.checked
+                                  ? "0"
+                                  : Number(current.price) > 0
+                                    ? current.price
+                                    : "1",
+                              }))
+                            }
+                          />
+                          Free product (email delivery without Paystack)
+                        </label>
+                        <button
+                          type="button"
+                          aria-expanded={releaseSettingsOpen}
+                          onClick={() => setReleaseSettingsOpen((open) => !open)}
+                          style={{ justifySelf: "start", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", color: "#334155", padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}
+                        >
+                          <i className={`fa-solid ${releaseSettingsOpen ? "fa-chevron-up" : "fa-chevron-down"}`} aria-hidden="true" /> {releaseSettingsOpen ? "Hide release settings" : "Release settings"}
+                        </button>
+                        {releaseSettingsOpen && (
+                          <div role="group" aria-label="Product release schedule" style={{ gridColumn: "1 / -1", overflow: "hidden", border: "1px solid #b9d7c6", borderRadius: "9px", background: "#fff" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "12px 14px", background: "#123c32", color: "#fff" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                <i className="fa-regular fa-calendar-check" aria-hidden="true" style={{ fontSize: "1.1rem", color: "#a7f3d0" }} />
+                                <div><div style={{ color: "#fff", fontSize: ".78rem", fontWeight: 900, letterSpacing: ".1em", textTransform: "uppercase" }}>Launch window</div><div style={{ marginTop: "2px", color: "#d1e7dc", fontSize: ".76rem" }}>West Africa Time (WAT)</div></div>
+                              </div>
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "#fff", fontSize: ".82rem", fontWeight: 800, cursor: "pointer" }}>
+                                <input type="checkbox" checked={storeProductForm.releaseEnabled} onChange={(event) => setStoreProductForm((current) => ({ ...current, releaseEnabled: event.target.checked }))} style={{ accentColor: "#34d399" }} />
+                                Schedule active
+                              </label>
+                            </div>
+                            <div style={{ display: "grid", gap: "13px", padding: "14px" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "12px" }}>
+                                <div style={{ display: "grid", gap: "6px", color: "#334155", fontSize: ".78rem", fontWeight: 800 }}>
+                                  <span><i className="fa-solid fa-unlock-keyhole" aria-hidden="true" style={{ marginRight: "6px", color: "#15803d" }} />Available from</span>
+                                  <DateTimePicker ariaLabel="Release date and time" required={storeProductForm.releaseEnabled} disabled={!storeProductForm.releaseEnabled} value={storeProductForm.releaseAt} onChange={(releaseAt) => setStoreProductForm((current) => ({ ...current, releaseAt }))} />
+                                </div>
+                                <div style={{ display: "grid", gap: "6px", color: "#334155", fontSize: ".78rem", fontWeight: 800 }}>
+                                  <span><i className="fa-solid fa-lock" aria-hidden="true" style={{ marginRight: "6px", color: "#b45309" }} />Close after (optional)</span>
+                                  <DateTimePicker ariaLabel="Close date and time" allowClear disabled={!storeProductForm.releaseEnabled} value={storeProductForm.closeAt} onChange={(closeAt) => setStoreProductForm((current) => ({ ...current, closeAt }))} />
+                                </div>
+                              </div>
+                              <label style={{ display: "flex", alignItems: "flex-start", gap: "8px", color: "#334155", fontWeight: 700, fontSize: ".8rem" }}>
+                                <input type="checkbox" checked={storeProductForm.allowAfterClose} disabled={!storeProductForm.releaseEnabled} onChange={(event) => setStoreProductForm((current) => ({ ...current, allowAfterClose: event.target.checked }))} />
+                                Keep this product available after the close date
+                              </label>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px", paddingTop: "11px", borderTop: "1px solid #e2e8f0", color: "#64748b", fontSize: ".75rem", lineHeight: 1.45 }}>
+                                <div><strong style={{ color: "#166534" }}>Before release</strong><br />Shoppers see “Available on the scheduled date and time.”</div>
+                                <div><strong style={{ color: "#9a3412" }}>After close</strong><br />Shoppers see “This product is no longer available.” unless continued access is enabled.</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div
+                          className="commerce-form-grid"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(160px, 1fr))",
+                            gap: "12px",
+                          }}
+                        >
+                          <CustomDropdown
+                            value={
+                              storeProductForm.inStock
+                                ? "available"
+                                : "out-of-stock"
+                            }
+                            onChange={(value) =>
+                              setStoreProductForm((current) => ({
+                                ...current,
+                                inStock: value === "available",
+                              }))
+                            }
+                            ariaLabel="Stock status"
+                            options={[
+                              { value: "available", label: "Available" },
+                              { value: "out-of-stock", label: "Out of stock" },
+                            ]}
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            value={storeProductForm.stockCount}
+                            onChange={(event) =>
+                              setStoreProductForm((current) => ({
+                                ...current,
+                                stockCount: event.target.value,
+                              }))
+                            }
+                            placeholder="Stock count"
+                            style={adminFieldStyle}
+                          />
+                        </div>
+                        <div
+                          className="commerce-cover-row"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) auto",
+                            gap: "12px",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div
+                            style={{ display: "grid", gap: "8px", minWidth: 0 }}
+                          >
+                            <label
+                              style={{
+                                color: "#475569",
+                                fontSize: "0.78rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              Cover image
+                            </label>
+                            <label
+                              onDragOver={(event) =>
+                                handleFileDragOver(
+                                  event,
+                                  setCoverFileDragActive,
+                                )
+                              }
+                              onDragLeave={(event) =>
+                                handleFileDragLeave(
+                                  event,
+                                  setCoverFileDragActive,
+                                )
+                              }
+                              onDrop={handleCoverFileDrop}
+                              style={{
+                                display: "grid",
+                                placeItems: "center",
+                                gap: "4px",
+                                minHeight: "58px",
+                                padding: "8px",
+                                boxSizing: "border-box",
+                                border: `1px dashed ${coverFileDragActive ? "#f97316" : "#cbd5e1"}`,
+                                borderRadius: "10px",
+                                background: coverFileDragActive
+                                  ? "#fff7ed"
+                                  : "#f8fafc",
+                                color: "#475569",
+                                cursor: coverFileUploading ? "wait" : "pointer",
+                                textAlign: "center",
+                                transition:
+                                  "border-color 160ms ease, background 160ms ease",
+                              }}
+                            >
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleCoverFileUpload}
+                                disabled={coverFileUploading}
+                                style={{ display: "none" }}
+                              />
+                              <span style={{ fontWeight: 700 }}>
+                                {coverFileDragActive
+                                  ? "Drop cover image here"
+                                  : "Drag an image here, or click to choose"}
+                              </span>
+                            </label>
+                            {coverFileUploading && (
+                              <span
+                                style={{
+                                  color: "#64748b",
+                                  fontSize: "0.78rem",
+                                }}
+                              >
+                                Uploading cover image...
+                              </span>
+                            )}
+                            {!coverFileUploading && coverFileName && (
+                              <span
+                                style={{
+                                  color: "#64748b",
+                                  fontSize: "0.78rem",
+                                }}
+                              >
+                                Attached: {coverFileName}
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "10px",
+                              alignItems: "center",
+                            }}
+                          >
+                            <button
+                              type="submit"
+                              style={{
+                                border: "none",
+                                background:
+                                  "linear-gradient(135deg, #f59e0b, #ef4444)",
+                                color: "#fff",
+                                borderRadius: "12px",
+                                padding: "12px 18px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                boxShadow:
+                                  "0 12px 20px rgba(245, 158, 11, 0.28)",
+                              }}
+                            >
+                              {editingStoreProductId
+                                ? "Save product and settings"
+                                : "Add product and settings"}
+                            </button>
+                            {editingStoreProductId && (
+                              <button
+                                type="button"
+                                onClick={resetStoreProductForm}
+                                style={{
+                                  border: "1px solid #cbd5e1",
+                                  background: "#fff",
+                                  color: "#334155",
+                                  borderRadius: "12px",
+                                  padding: "12px 14px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </form>
+
+                      {publishedProductLink && (
+                        <div
+                          style={{
+                            marginTop: "16px",
+                            padding: "14px",
+                            border: "1px solid #bbf7d0",
+                            borderRadius: "12px",
+                            background: "#f0fdf4",
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: "8px",
+                              color: "#166534",
+                              fontSize: "0.8rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Public product link
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "stretch",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <input
+                              value={publishedProductLink}
+                              readOnly
+                              aria-label="Public product link"
+                              onFocus={(event) => event.target.select()}
+                              style={{
+                                ...adminFieldStyle,
+                                flex: "1 1 280px",
+                                minWidth: 0,
+                                color: "#166534",
+                                background: "#fff",
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={copyPublishedProductLink}
+                              style={{
+                                border: "none",
+                                borderRadius: "10px",
+                                padding: "10px 14px",
+                                background: "#166534",
+                                color: "#fff",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <i
+                                className="fa-solid fa-copy"
+                                aria-hidden="true"
+                              />{" "}
+                              Copy link
+                            </button>
+                            <a
+                              href={publishedProductLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                border: "1px solid #86efac",
+                                borderRadius: "10px",
+                                padding: "10px 14px",
+                                background: "#fff",
+                                color: "#166534",
+                                fontWeight: 800,
+                                textDecoration: "none",
+                              }}
+                            >
+                              <i
+                                className="fa-solid fa-arrow-up-right-from-square"
+                                aria-hidden="true"
+                              />{" "}
+                              Open
+                            </a>
+                          </div>
+                          <div
+                            style={{
+                              marginTop: "8px",
+                              color: "#166534",
+                              fontSize: "0.78rem",
+                            }}
+                          >
+                            Copy this URL to advertise the product on Facebook,
+                            WhatsApp, or any other platform.
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: "24px" }}>
+                        <div
+                          style={{
+                            marginBottom: "12px",
+                            fontSize: "0.8rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                            color: "#64748b",
+                          }}
+                        >
+                          Published products
+                        </div>
+                        {storeProducts.length > 0 ? (
+                          <div className="commerce-product-list">
+                            {storeProducts.map((product) => {
+                              const isAvailable =
+                                product.inStock !== false &&
+                                Number(product.stockCount || 0) > 0;
+                              return (
+                                <div
+                                  key={product.id}
+                                  className="commerce-product-card"
+                                >
+                                  <div className="commerce-product-media">
+                                    <ProductCover product={product} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  </div>
+                                  <div className="commerce-product-meta">
+                                    <div
+                                      className="commerce-product-badges"
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                        flexWrap: "wrap",
+                                        marginBottom: "4px",
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          background: "#e0f2fe",
+                                          color: "#0369a1",
+                                          borderRadius: "999px",
+                                          padding: "4px 8px",
+                                          fontSize: "0.7rem",
+                                          fontWeight: 800,
+                                          letterSpacing: "0.04em",
+                                          textTransform: "uppercase",
+                                        }}
+                                      >
+                                        {product.category || "Ebook"}
+                                      </span>
+                                      <span
+                                        style={{
+                                          background: isAvailable
+                                            ? "#dcfce7"
+                                            : "#fee2e2",
+                                          color: isAvailable
+                                            ? "#166534"
+                                            : "#b91c1c",
+                                          borderRadius: "999px",
+                                          padding: "4px 8px",
+                                          fontSize: "0.7rem",
+                                          fontWeight: 800,
+                                          letterSpacing: "0.04em",
+                                          textTransform: "uppercase",
+                                        }}
+                                      >
+                                        {isAvailable
+                                          ? "Available"
+                                          : "Out of stock"}
+                                      </span>
+                                      <span style={{ background: product.status === "approved" ? "#dcfce7" : product.status === "rejected" ? "#fee2e2" : "#fef3c7", color: product.status === "approved" ? "#166534" : product.status === "rejected" ? "#b91c1c" : "#92400e", borderRadius: "999px", padding: "4px 8px", fontSize: "0.7rem", fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase" }}>{product.status === "approved" ? "Admin approved" : product.status === "rejected" ? "Rejected" : "Needs review"}</span>
+                                    </div>
+                                    <div
+                                      className="commerce-product-title"
+                                      style={{
+                                        fontWeight: 800,
+                                        color: "#0f172a",
+                                        fontSize: "1rem",
+                                        marginBottom: "4px",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {product.title}
+                                    </div>
+                                    <div
+                                      className="commerce-product-desc"
+                                      style={{
+                                        color: "#64748b",
+                                        fontSize: "0.82rem",
+                                        marginBottom: "6px",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {product.description ||
+                                        "No description provided yet."}
+                                    </div>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                        flexWrap: "wrap",
+                                      }}
+                                    >
+                                      <span
+                                        style={{
+                                          fontWeight: 800,
+                                          color: "#0f172a",
+                                          fontSize: "0.9rem",
+                                        }}
+                                      >
+                                        {product.isFree
+                                          ? "Free"
+                                          : `${currencySymbols[product.currency || "NGN"] || product.currency || ""}${Number(product.price || 0).toLocaleString()}`}
+                                      </span>
+                                      <span
+                                        style={{
+                                          color: "#64748b",
+                                          fontSize: "0.78rem",
+                                          overflowWrap: "anywhere",
+                                        }}
+                                      >
+                                        {product.fileUrl
+                                          ? `File attached: product-files/${product.fileUrl}`
+                                          : "No product file"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="commerce-product-actions">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateStoreProductReviewStatus(product, product.status === "approved" ? "rejected" : "approved")}
+                                      style={{
+                                        border: "1px solid #0f766e",
+                                        background: "#ecfdf5",
+                                        color: "#0f766e",
+                                        borderRadius: "10px",
+                                        padding: "8px 10px",
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      {product.status === "approved" ? "Reject" : "Approve"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleStoreProductAvailability(
+                                          product.id,
+                                        )
+                                      }
+                                      style={{
+                                        border: "1px solid #d1d5db",
+                                        background: "#f8fafc",
+                                        color: "#1f2937",
+                                        borderRadius: "10px",
+                                        padding: "8px 10px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      {isAvailable
+                                        ? "Mark sold out"
+                                        : "Mark available"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleEditStoreProduct(product)
+                                      }
+                                      style={{
+                                        border: "1px solid #cbd5e1",
+                                        background: "#fff",
+                                        color: "#1f2937",
+                                        borderRadius: "10px",
+                                        padding: "8px 10px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyProductLink(product)}
+                                      title={`Copy public link for ${product.title}`}
+                                      style={{
+                                        border: "1px solid #86efac",
+                                        background: "#f0fdf4",
+                                        color: "#166534",
+                                        borderRadius: "10px",
+                                        padding: "8px 10px",
+                                        fontWeight: 800,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      <i
+                                        className="fa-solid fa-copy"
+                                        aria-hidden="true"
+                                      />{" "}
+                                      Copy link
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        confirmDeleteStoreProduct(product)
+                                      }
+                                      style={{
+                                        border: "1px solid #fecaca",
+                                        background: "#fff1f2",
+                                        color: "#b91c1c",
+                                        borderRadius: "10px",
+                                        padding: "8px 10px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              color: "#64748b",
+                              background: "#f8fafc",
+                              border: "1px dashed #cbd5e1",
+                              borderRadius: "12px",
+                              padding: "18px",
+                              textAlign: "center",
+                            }}
+                          >
+                            No products published yet.
+                          </div>
+                        )}
+                      </div>
+
+                      {productDeleteTarget && (
+                        <div
+                          onClick={() => setProductDeleteTarget(null)}
+                          style={{
+                            position: "fixed",
+                            inset: 0,
+                            background: "rgba(15, 23, 42, 0.6)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            zIndex: 20000,
+                            padding: "20px",
+                          }}
+                        >
+                          <div
+                            onClick={(event) => event.stopPropagation()}
+                            style={{
+                              width: "100%",
+                              maxWidth: "420px",
+                              background: "#fff",
+                              borderRadius: "18px",
+                              boxShadow: "0 30px 80px rgba(15, 23, 42, 0.28)",
+                              border: "1px solid #e2e8f0",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                padding: "22px 22px 14px",
+                                borderBottom: "1px solid #eef2f7",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: "0.76rem",
+                                  letterSpacing: "0.12em",
+                                  textTransform: "uppercase",
+                                  color: "#f97316",
+                                  fontWeight: 800,
+                                  marginBottom: "8px",
+                                }}
+                              >
+                                Delete product
+                              </div>
+                              <h4
+                                style={{
+                                  margin: 0,
+                                  color: "#0f172a",
+                                  fontSize: "1.3rem",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                Remove this item?
+                              </h4>
+                            </div>
+                            <div
+                              style={{
+                                padding: "18px 22px",
+                                color: "#475569",
+                                lineHeight: 1.6,
+                              }}
+                            >
+                              This will remove{" "}
+                              <strong style={{ color: "#0f172a" }}>
+                                {productDeleteTarget.title || "this product"}
+                              </strong>{" "}
+                              from the storefront and shop pages.
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "flex-end",
+                                gap: "10px",
+                                padding: "0 22px 22px",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setProductDeleteTarget(null)}
+                                style={{
+                                  border: "1px solid #d1d5db",
+                                  background: "#fff",
+                                  color: "#334155",
+                                  borderRadius: "10px",
+                                  padding: "10px 16px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeleteStoreProduct(
+                                    productDeleteTarget.id,
+                                  );
+                                  setProductDeleteTarget(null);
+                                }}
+                                style={{
+                                  border: "none",
+                                  background:
+                                    "linear-gradient(135deg, #ef4444, #b91c1c)",
+                                  color: "#fff",
+                                  borderRadius: "10px",
+                                  padding: "10px 16px",
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Delete product
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {activeDashboardView === "payment-history" && (
+                  <div
+                    className="commerce-panel-shell"
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #dfe7ef",
+                      borderRadius: "20px",
+                      padding: "22px",
+                      boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+                      minWidth: 0,
+                      width: "100%",
+                      maxWidth: "none",
+                      margin: "0 auto",
+                      boxSizing: "border-box",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "12px",
+                        marginBottom: "18px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <p
+                          style={{
+                            margin: 0,
+                            color: "#10b981",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.12em",
+                            fontSize: "0.72rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Payments
+                        </p>
+                        <h3
+                          style={{
+                            margin: "8px 0 0",
+                            fontSize: "1.5rem",
+                            fontWeight: 800,
+                            color: "#111827",
+                          }}
+                        >
+                          Paystack payment history
+                        </h3>
+                      </div>
+                      <div
+                        style={{
+                          background: "#ecfdf5",
+                          color: "#047857",
+                          border: "1px solid #a7f3d0",
+                          borderRadius: "999px",
+                          padding: "8px 12px",
+                          fontSize: "0.8rem",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {
+                          selectedPaymentRows.filter(
+                            (payment) => payment.status === "paid",
+                          ).length
+                        }{" "}
+                        successful
+                      </div>
+                    </div>
+                    <div
+                      className="commerce-tab-row"
+                      style={{ marginBottom: "16px" }}
+                    >
+                      {[
+                        ["store", "Store"],
+                        ["booking", "Booking"],
+                        ["teens", "Teens Reg"],
+                      ].map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setPaymentHistoryTab(id)}
+                          style={{
+                            border: "1px solid #dfe7ef",
+                            background:
+                              paymentHistoryTab === id ? "#111827" : "#fff",
+                            color:
+                              paymentHistoryTab === id ? "#fff" : "#334155",
+                            borderRadius: "999px",
+                            padding: "9px 14px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ overflowX: "auto", width: "100%" }}>
+                      <table
+                        style={{
+                          width: "100%",
+                          minWidth: "680px",
+                          borderCollapse: "collapse",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background: "#f8fafc",
+                              color: "#475569",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                              fontSize: "0.72rem",
+                            }}
+                          >
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Service
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Customer
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Amount
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Paystack reference
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Mode
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Status
+                            </th>
+                            <th
+                              style={{
+                                padding: "12px 14px",
+                                textAlign: "left",
+                              }}
+                            >
+                              Date
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visiblePaymentRows.length > 0 ? (
+                            visiblePaymentRows.map((payment, index) => (
+                              <tr
+                                key={
+                                  payment.id || `${payment.reference}-${index}`
+                                }
+                                style={{
+                                  borderBottom: "1px solid #e2e8f0",
+                                  background: paymentReference
+                                    ? "#ecfdf5"
+                                    : "transparent",
+                                }}
+                              >
+                                <td
+                                  style={{
+                                    padding: "12px 14px",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {payment.service}
+                                </td>
+                                <td style={{ padding: "12px 14px" }}>
+                                  <div style={{ fontWeight: 700 }}>
+                                    {payment.customer || "Customer"}
+                                  </div>
+                                  <div
+                                    style={{
+                                      color: "#64748b",
+                                      fontSize: "0.8rem",
+                                    }}
+                                  >
+                                    {payment.email || "No email"}
+                                  </div>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "12px 14px",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {new Intl.NumberFormat("en-NG", {
+                                    style: "currency",
+                                    currency: "NGN",
+                                    maximumFractionDigits: 0,
+                                  }).format(Number(payment.amount || 0))}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "12px 14px",
+                                    color: "#475569",
+                                    fontFamily: "monospace",
+                                    fontSize: "0.78rem",
+                                  }}
+                                >
+                                  {payment.reference || "Pending"}
+                                </td>
+                                <td style={{ padding: "12px 14px" }}>
+                                  <span
+                                    style={{
+                                      background:
+                                        payment.paymentMode === "test"
+                                          ? "#fef3c7"
+                                          : "#dcfce7",
+                                      color:
+                                        payment.paymentMode === "test"
+                                          ? "#92400e"
+                                          : "#166534",
+                                      borderRadius: "999px",
+                                      padding: "6px 10px",
+                                      fontSize: "0.76rem",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {payment.paymentMode === "test"
+                                      ? "Test"
+                                      : "Live"}
+                                  </span>
+                                </td>
+                                <td style={{ padding: "12px 14px" }}>
+                                  <span
+                                    style={{
+                                      background:
+                                        payment.status === "paid"
+                                          ? "#dcfce7"
+                                          : "#fff7ed",
+                                      color:
+                                        payment.status === "paid"
+                                          ? "#166534"
+                                          : "#b45309",
+                                      borderRadius: "999px",
+                                      padding: "6px 10px",
+                                      fontSize: "0.76rem",
+                                      fontWeight: 700,
+                                      textTransform: "capitalize",
+                                    }}
+                                  >
+                                    {payment.status || "pending"}
+                                  </span>
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "12px 14px",
+                                    color: "#475569",
+                                  }}
+                                >
+                                  {payment.date
+                                    ? new Date(
+                                        payment.date,
+                                      ).toLocaleDateString()
+                                    : "N/A"}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan="7"
+                                style={{
+                                  padding: "22px 14px",
+                                  textAlign: "center",
+                                  color: "#64748b",
+                                }}
+                              >
+                                {paymentReference
+                                  ? `No transaction found for reference ${paymentReference}.`
+                                  : "No Paystack payments have been recorded yet."}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeDashboardView === "commerce" &&
+                  commerceSubTab === "orders" && (
+                    <div
+                      className="commerce-panel-shell"
+                      style={{
+                        background: "#ffffff",
+                        border: "1px solid #dfe7ef",
+                        borderRadius: "20px",
+                        padding: "22px",
+                        boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+                        minWidth: 0,
+                        width: "100%",
+                        maxWidth: "none",
+                        margin: "0 auto",
+                        boxSizing: "border-box",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "12px",
+                          marginBottom: "18px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "#f59e0b",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.12em",
+                              fontSize: "0.72rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Orders
+                          </p>
+                          <h3
+                            style={{
+                              margin: "8px 0 0",
+                              fontSize: "1.5rem",
+                              fontWeight: 800,
+                              color: "#111827",
+                            }}
+                          >
+                            Recent customer orders
+                          </h3>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            flexWrap: "wrap",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <div
+                            style={{
+                              background: "#f8fafc",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "999px",
+                              padding: "8px 12px",
+                              color: "#334155",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {shopOrders.length} total
+                          </div>
+                          <div
+                            style={{
+                              background: "#f0fdf4",
+                              border: "1px solid #bbf7d0",
+                              borderRadius: "999px",
+                              padding: "8px 12px",
+                              color: "#166534",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {serverCompletedShopOrderCount ?? completedShopOrders.length} completed live
+                          </div>
+                          <button
+                            type="button"
+                            onClick={deleteTestPurchases}
+                            title="Delete test-mode purchases only"
+                            style={{
+                              border: "1px solid #fecaca",
+                              background: "#fff1f2",
+                              color: "#b91c1c",
+                              borderRadius: "10px",
+                              padding: "9px 12px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <i
+                              className="fa-solid fa-vial-circle-check"
+                              aria-hidden="true"
+                            ></i>{" "}
+                            Delete test purchases
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ overflowX: "auto", width: "100%" }}>
+                        <table
+                          style={{
+                            width: "100%",
+                            borderCollapse: "collapse",
+                            minWidth: "760px",
+                          }}
+                        >
+                          <thead>
+                            <tr
+                              style={{
+                                background: "#f8fafc",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.04em",
+                                fontSize: "0.74rem",
+                              }}
+                            >
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Order
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Customer
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Items
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Total
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Mode
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Status
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Email
+                              </th>
+                              <th
+                                style={{
+                                  padding: "12px 14px",
+                                  textAlign: "left",
+                                }}
+                              >
+                                Date
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shopOrders.length > 0 ? (
+                              shopOrders.map((order) => (
+                                <tr
+                                  key={order.id || order.orderNumber}
+                                  onClick={() => openShopOrderReview(order)}
+                                  style={{
+                                    borderBottom: "1px solid #e2e8f0",
+                                    cursor: "pointer",
+                                    transition: "background 0.2s ease",
+                                  }}
+                                  onMouseEnter={(event) => {
+                                    event.currentTarget.style.background =
+                                      "#f8fafc";
+                                  }}
+                                  onMouseLeave={(event) => {
+                                    event.currentTarget.style.background =
+                                      "transparent";
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "12px 14px",
+                                      fontWeight: 700,
+                                      color: "#0f172a",
+                                    }}
+                                  >
+                                    {order.orderNumber || "N/A"}
+                                  </td>
+                                  <td style={{ padding: "12px 14px" }}>
+                                    <div
+                                      style={{
+                                        fontWeight: 700,
+                                        color: "#0f172a",
+                                      }}
+                                    >
+                                      {order.name || "Customer"}
+                                    </div>
+                                    <div
+                                      style={{
+                                        color: "#64748b",
+                                        fontSize: "0.82rem",
+                                      }}
+                                    >
+                                      {order.email || "No email"}
+                                    </div>
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 14px",
+                                      color: "#334155",
+                                    }}
+                                  >
+                                    {(order.items || [])
+                                      .map(
+                                        (item) =>
+                                          `${item.title} x${item.quantity}`,
+                                      )
+                                      .join(", ") || "No items"}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 14px",
+                                      fontWeight: 700,
+                                      color: "#0f172a",
+                                    }}
+                                  >
+                                    {new Intl.NumberFormat("en-NG", {
+                                      style: "currency",
+                                      currency: "NGN",
+                                      maximumFractionDigits: 0,
+                                    }).format(Number(order.total || 0))}
+                                  </td>
+                                  <td style={{ padding: "12px 14px" }}>
+                                    <span
+                                      style={{
+                                        background:
+                                          order.paymentMode === "test"
+                                            ? "#fef3c7"
+                                            : "#dcfce7",
+                                        color:
+                                          order.paymentMode === "test"
+                                            ? "#92400e"
+                                            : "#166534",
+                                        borderRadius: "999px",
+                                        padding: "6px 10px",
+                                        fontSize: "0.76rem",
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      {order.paymentMode === "test"
+                                        ? "Test"
+                                        : "Live"}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: "12px 14px" }}>
+                                    <span
+                                      style={{
+                                        background:
+                                          order.status === "paid"
+                                            ? "#dcfce7"
+                                            : "#fff7ed",
+                                        color:
+                                          order.status === "paid"
+                                            ? "#166534"
+                                            : "#b45309",
+                                        borderRadius: "999px",
+                                        padding: "6px 10px",
+                                        fontSize: "0.76rem",
+                                        fontWeight: 700,
+                                        textTransform: "capitalize",
+                                      }}
+                                    >
+                                      {order.status || "pending"}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: "12px 14px" }}>
+                                    <span
+                                      style={{
+                                        background:
+                                          order.deliverySent ||
+                                          order.productEmailSent
+                                            ? "#dcfce7"
+                                            : "#fef3c7",
+                                        color:
+                                          order.deliverySent ||
+                                          order.productEmailSent
+                                            ? "#166534"
+                                            : "#92400e",
+                                        borderRadius: "999px",
+                                        padding: "6px 10px",
+                                        fontSize: "0.76rem",
+                                        fontWeight: 700,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {order.deliverySent ||
+                                      order.productEmailSent
+                                        ? "Auto-sent"
+                                        : "Not delivered"}
+                                    </span>
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 14px",
+                                      color: "#475569",
+                                    }}
+                                  >
+                                    {order.createdAt
+                                      ? new Date(
+                                          order.createdAt,
+                                        ).toLocaleDateString()
+                                      : "N/A"}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td
+                                  colSpan="7"
+                                  style={{
+                                    padding: "22px 14px",
+                                    textAlign: "center",
+                                    color: "#64748b",
+                                  }}
+                                >
+                                  No checkout orders have been placed yet.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+              </>
+            ) : activeDashboardView === "users" ? (
+              <div className="commerce-panel-shell" style={{ background: "#fff", border: "1px solid #dfe7ef", borderRadius: "20px", padding: "22px", boxSizing: "border-box" }}>
+                <style>{`
+                  @media (max-width: 760px) {
+                    .customer-management-layout { grid-template-columns: minmax(0, 1fr) !important; gap: 12px !important; }
+                    .customer-list-items { max-height: 280px !important; }
+                    .customer-profile-panel { padding: 12px !important; }
+                    .customer-profile-fields { grid-template-columns: minmax(0, 1fr) !important; }
+                    .customer-search-input { flex: 1 1 100%; width: 100% !important; max-width: none; box-sizing: border-box; }
+                    .customer-bulk-send-button { justify-self: stretch !important; }
+                    .customer-monitor-tabs { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px !important; overflow: visible !important; }
+                    .customer-monitor-tab { min-width: 0; justify-content: center; padding: 9px 5px !important; border-radius: 10px !important; font-size: .76rem; line-height: 1.15; white-space: normal; text-align: center; }
+                    .customer-notification-panel { width: 100%; max-width: 760px; box-sizing: border-box; padding: 14px !important; }
+                    .customer-recipient-select { display: block; width: 100% !important; min-width: 0 !important; max-width: 100% !important; box-sizing: border-box !important; font-size: 16px !important; }
+                  }
+                `}</style>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "16px", flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                    <p style={{ margin: 0, color: "#0f766e", textTransform: "uppercase", letterSpacing: ".12em", fontSize: ".72rem", fontWeight: 800 }}>Customer accounts</p>
+                    <h3 style={{ margin: "8px 0", fontSize: "1.5rem" }}>Users</h3>
+                    <p style={{ margin: 0, color: "#64748b" }}>Customer profiles only. Vendor accounts and vendor conversations remain in the Vendors monitor.</p>
+                  </div>
+                  {(customerTab === "users" || customerTab === "messages") && <input className="customer-search-input" type="search" value={customerSearch} onChange={(event) => { setCustomerSearch(event.target.value); setCustomerPage(1); }} placeholder={customerTab === "messages" ? "Find a customer to message" : "Search name, email, or phone"} aria-label={customerTab === "messages" ? "Search customers to message" : "Search customer accounts"} style={{ width: "min(100%, 340px)", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: "9px", font: "inherit" }} />}
+                </div>
+                <div className="customer-monitor-tabs" role="tablist" aria-label="Customer monitor sections" style={{ display: "flex", gap: "8px", marginTop: "18px", paddingBottom: "8px", borderBottom: "1px solid #e2e8f0", overflowX: "auto" }}>
+                  {[
+                    { id: "users", label: "Users", count: customerCount },
+                    { id: "messages", label: "Messages" },
+                    { id: "general", label: "Broadcast" },
+                  ].map((tab) => (
+                    <button className="customer-monitor-tab" key={tab.id} type="button" role="tab" aria-selected={customerTab === tab.id} onClick={() => setCustomerTab(tab.id)} style={{ flex: "0 0 auto", display: "inline-flex", alignItems: "center", gap: "7px", padding: "10px 14px", border: `1px solid ${customerTab === tab.id ? "#0f766e" : "#dbe3ea"}`, borderRadius: "999px", background: customerTab === tab.id ? "#0f766e" : "#fff", color: customerTab === tab.id ? "#fff" : "#475569", fontWeight: 800, cursor: "pointer" }}>
+                      {tab.label}
+                      {tab.count != null && <span style={{ minWidth: "22px", padding: "2px 6px", borderRadius: "999px", background: customerTab === tab.id ? "rgba(255,255,255,.18)" : "#f1f5f9", fontSize: ".76rem", textAlign: "center" }}>{tab.count}</span>}
+                    </button>
+                  ))}
+                </div>
+                {customerError && <p role="alert" style={{ color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", padding: "10px 12px", borderRadius: "9px" }}>{customerError}</p>}
+                {customerTab === "users" && <div className="customer-management-layout" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: "18px", marginTop: "20px" }}>
+                  <section aria-label="Customer list" style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", color: "#64748b", fontSize: ".88rem" }}>
+                      <span>{customerCount ?? 0} customer accounts</span>
+                      <span>{customerLoading ? "Loading..." : `Page ${customerPage}`}</span>
+                    </div>
+                    <div className="customer-list-items" style={{ display: "grid", gap: "8px" }}>
+                      {customerProfiles.map((customer) => (
+                        <div key={customer.id} style={{ display: "grid", gap: "8px" }}>
+                          <button type="button" onClick={() => {
+                            if (selectedCustomerId === customer.id) {
+                              setSelectedCustomerId("");
+                              setCustomerDraft(null);
+                              return;
+                            }
+                            setSelectedCustomerId(customer.id);
+                            setCustomerDraft({ ...customer, delivery_address: customer.delivery_address && typeof customer.delivery_address === "object" ? { ...customer.delivery_address } : {} });
+                          }} aria-expanded={selectedCustomerId === customer.id} style={{ width: "100%", boxSizing: "border-box", textAlign: "left", padding: "12px", border: `1px solid ${selectedCustomerId === customer.id ? "#0f766e" : "#e2e8f0"}`, borderRadius: "10px", background: selectedCustomerId === customer.id ? "#f0fdfa" : "#fff", cursor: "pointer", font: "inherit" }}>
+                            <strong style={{ display: "block", color: "#0f172a" }}>{customer.full_name || [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "Unnamed customer"}</strong>
+                            <span style={{ display: "block", marginTop: "3px", color: "#475569", overflowWrap: "anywhere", fontSize: ".88rem" }}>{customer.email || "No email on profile"}</span>
+                            <span style={{ display: "block", marginTop: "3px", color: "#64748b", fontSize: ".82rem" }}>{customer.phone || "No phone"}</span>
+                          </button>
+                          {selectedCustomerId === customer.id && customerDraft && (
+                            <section className="customer-profile-panel" aria-label={`Edit ${customer.full_name || customer.email || "customer"} profile`} style={{ minWidth: 0, border: "1px solid #b7ded5", borderRadius: "12px", padding: "16px", background: "#fbfffd" }}>
+                              <h4 style={{ margin: "0 0 12px", fontSize: "1.1rem" }}>Edit customer profile</h4>
+                              <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: ".85rem" }}>Account email is read-only here; changing it requires a separate Supabase Auth email-change flow.</p>
+                              {customerDraft.avatar_url ? <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: ".85rem" }}>Profile photo: <a href={customerDraft.avatar_url} target="_blank" rel="noreferrer">View customer photo</a></p> : null}
+                              <div className="customer-profile-fields" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
+                                {[["Full name", "full_name"], ["First name", "first_name"], ["Last name", "last_name"], ["Phone", "phone"], ["Country code", "country_code"], ["Language", "language"], ["Currency", "currency"]].map(([label, field]) => (
+                                  <label key={field} style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".86rem", fontWeight: 700 }}>{label}<input value={customerDraft[field] || ""} onChange={(event) => setCustomerDraft((current) => ({ ...current, [field]: event.target.value }))} style={{ minWidth: 0, padding: "9px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", font: "inherit", fontWeight: 400 }} /></label>
+                                ))}
+                                <label style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".86rem", fontWeight: 700 }}>Email<input readOnly value={customerDraft.email || ""} style={{ minWidth: 0, padding: "9px 10px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc", font: "inherit", fontWeight: 400 }} /></label>
+                              </div>
+                              <h5 style={{ margin: "18px 0 10px", fontSize: ".98rem" }}>Delivery address</h5>
+                              <div className="customer-profile-fields" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
+                                {[["Address name", "fullName"], ["Address phone", "phone"], ["Street address", "addressLine1"], ["Address line 2", "addressLine2"], ["City", "city"], ["State", "state"], ["Postal code", "postalCode"], ["Country", "country"]].map(([label, field]) => (
+                                  <label key={field} style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".86rem", fontWeight: 700 }}>{label}<input value={customerDraft.delivery_address?.[field] || ""} onChange={(event) => setCustomerDraft((current) => ({ ...current, delivery_address: { ...(current.delivery_address || {}), [field]: event.target.value } }))} style={{ minWidth: 0, padding: "9px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", font: "inherit", fontWeight: 400 }} /></label>
+                                ))}
+                              </div>
+                              <label style={{ display: "flex", alignItems: "center", gap: "9px", marginTop: "12px", color: "#334155", fontSize: ".9rem" }}><input type="checkbox" checked={Boolean(customerDraft.notifications_enabled)} onChange={(event) => setCustomerDraft((current) => ({ ...current, notifications_enabled: event.target.checked }))} />Customer has enabled app notifications</label>
+                              <button type="button" onClick={saveCustomerProfile} disabled={customerActionBusy === "save"} style={{ marginTop: "14px", padding: "10px 14px", border: 0, borderRadius: "8px", background: "#0f766e", color: "#fff", fontWeight: 800, cursor: customerActionBusy === "save" ? "wait" : "pointer" }}>{customerActionBusy === "save" ? "Saving..." : "Save profile"}</button>
+                            </section>
+                          )}
+                        </div>
+                      ))}
+                      {!customerLoading && !customerProfiles.length && <p style={{ color: "#64748b" }}>No customer accounts matched this search.</p>}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginTop: "12px" }}>
+                      <button type="button" disabled={customerPage <= 1 || customerLoading} onClick={() => setCustomerPage((page) => Math.max(1, page - 1))} style={{ padding: "8px 11px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", cursor: "pointer" }}>Previous</button>
+                      <button type="button" disabled={customerLoading || customerPage * 25 >= (customerCount || 0)} onClick={() => setCustomerPage((page) => page + 1)} style={{ padding: "8px 11px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", cursor: "pointer" }}>Next</button>
+                    </div>
+                  </section>
+                </div>}
+                {customerTab === "messages" && (
+                  <section className="customer-notification-panel" aria-label="Send message to one customer" style={{ width: "100%", maxWidth: "760px", margin: "20px auto 0", padding: "20px", border: "1px solid #dbe7ed", borderRadius: "16px", background: "linear-gradient(145deg, #f8fffd, #ffffff 55%)", boxShadow: "0 8px 24px rgba(15, 23, 42, .04)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "12px", flexWrap: "wrap" }}>
+                      <div>
+                        <h4 style={{ margin: "0 0 5px", fontSize: "1.12rem" }}>Message one customer</h4>
+                        <p style={{ margin: 0, color: "#64748b", fontSize: ".9rem" }}>Send a private in-app notification. It will not send an email.</p>
+                      </div>
+                      <span style={{ padding: "5px 9px", borderRadius: "999px", background: "#e6f5ef", color: "#0f766e", fontSize: ".76rem", fontWeight: 800 }}>IN-APP ONLY</span>
+                    </div>
+                    <label style={{ display: "grid", gap: "6px", marginTop: "18px", color: "#334155", fontSize: ".88rem", fontWeight: 700 }}>
+                      Customer
+                      <select className="customer-recipient-select" value={selectedCustomerId} onChange={(event) => {
+                        const selected = customerProfiles.find((customer) => customer.id === event.target.value);
+                        setSelectedCustomerId(event.target.value);
+                        setCustomerDraft(selected ? { ...selected, delivery_address: selected.delivery_address && typeof selected.delivery_address === "object" ? { ...selected.delivery_address } : {} } : null);
+                      }} style={{ display: "block", width: "100%", minWidth: 0, maxWidth: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: "9px", background: "#fff", font: "inherit" }}>
+                        <option value="">{customerLoading ? "Loading customers…" : customerProfiles.length ? "Choose a customer" : "No matching customers"}</option>
+                        {customerProfiles.map((customer) => <option key={customer.id} value={customer.id}>{customer.full_name || [customer.first_name, customer.last_name].filter(Boolean).join(" ") || customer.email || "Unnamed customer"}{customer.email ? ` — ${customer.email}` : ""}</option>)}
+                      </select>
+                    </label>
+                    {customerDraft ? (
+                      <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
+                        <div style={{ padding: "11px 12px", borderRadius: "10px", background: "#f1f5f9", color: "#334155", overflowWrap: "anywhere" }}>
+                          <strong>{customerDraft.full_name || [customerDraft.first_name, customerDraft.last_name].filter(Boolean).join(" ") || "Unnamed customer"}</strong>
+                          <span style={{ display: "block", marginTop: "3px", color: "#64748b", fontSize: ".86rem" }}>{customerDraft.email || "No email on profile"}{customerDraft.phone ? ` · ${customerDraft.phone}` : ""}</span>
+                        </div>
+                        <label style={{ display: "grid", gap: "6px", color: "#334155", fontSize: ".88rem", fontWeight: 700 }}>Notification title<input value={customerSubject} onChange={(event) => setCustomerSubject(event.target.value)} maxLength={180} placeholder="e.g. Your order is ready" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: "9px", font: "inherit", fontWeight: 400 }} /></label>
+                        <label style={{ display: "grid", gap: "6px", color: "#334155", fontSize: ".88rem", fontWeight: 700 }}>Message<textarea value={customerMessage} onChange={(event) => setCustomerMessage(event.target.value)} maxLength={5000} rows={5} placeholder="Write a message for this customer" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: "9px", resize: "vertical", font: "inherit", fontWeight: 400 }} /></label>
+                        <button type="button" onClick={() => sendCustomerNotification(false)} disabled={customerActionBusy === "single"} style={{ justifySelf: "start", padding: "11px 16px", border: 0, borderRadius: "9px", background: "#0f766e", color: "#fff", fontWeight: 800, cursor: customerActionBusy === "single" ? "wait" : "pointer" }}>{customerActionBusy === "single" ? "Sending..." : "Send in-app message"}</button>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: "16px", padding: "16px", border: "1px dashed #cbd5e1", borderRadius: "10px", color: "#64748b", textAlign: "center" }}>
+                        <p style={{ margin: "0 0 10px" }}>{customerLoading ? "Loading customer accounts…" : customerProfiles.length ? "Choose a customer to compose a private message." : "No customers matched. Try another search."}</p>
+                        {customerProfiles.length ? <button type="button" onClick={() => setCustomerTab("users")} style={{ padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", color: "#0f766e", fontWeight: 800, cursor: "pointer" }}>Browse customer list</button> : null}
+                      </div>
+                    )}
+                  </section>
+                )}
+                {customerTab === "general" && (
+                  <section className="customer-notification-panel" aria-label="General notification to all customers" style={{ width: "100%", maxWidth: "760px", margin: "20px auto 0", padding: "20px", border: "1px solid #d9d6fe", borderRadius: "16px", background: "linear-gradient(145deg, #f7f7ff, #ffffff 55%)", boxShadow: "0 8px 24px rgba(15, 23, 42, .04)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "12px", flexWrap: "wrap" }}>
+                      <div>
+                        <h4 style={{ margin: "0 0 5px", fontSize: "1.12rem" }}>Notify all customers</h4>
+                        <p style={{ margin: 0, color: "#64748b", fontSize: ".9rem" }}>Send a general in-app announcement to every customer account. Vendor accounts are excluded.</p>
+                      </div>
+                      <span style={{ padding: "5px 9px", borderRadius: "999px", background: "#eeedff", color: "#4338ca", fontSize: ".76rem", fontWeight: 800 }}>{customerCount ?? 0} CUSTOMERS</span>
+                    </div>
+                    <div style={{ display: "grid", gap: "12px", marginTop: "18px" }}>
+                      <label style={{ display: "grid", gap: "6px", color: "#334155", fontSize: ".88rem", fontWeight: 700 }}>Notification title<input aria-label="General notification title" value={customerBroadcastSubject} onChange={(event) => setCustomerBroadcastSubject(event.target.value)} maxLength={180} placeholder="e.g. New update from PAZ" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: "9px", font: "inherit", fontWeight: 400 }} /></label>
+                      <label style={{ display: "grid", gap: "6px", color: "#334155", fontSize: ".88rem", fontWeight: 700 }}>Announcement<textarea aria-label="General notification message" value={customerBroadcastMessage} onChange={(event) => setCustomerBroadcastMessage(event.target.value)} maxLength={5000} rows={5} placeholder="Write your announcement for all customers" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: "9px", resize: "vertical", font: "inherit", fontWeight: 400 }} /></label>
+                      <p style={{ margin: 0, color: "#64748b", fontSize: ".82rem" }}>This creates an in-app notification for {customerCount ?? 0} customers. No email is sent.</p>
+                      <button className="customer-bulk-send-button" type="button" onClick={() => sendCustomerNotification(true)} disabled={customerActionBusy === "bulk" || !customerCount} style={{ justifySelf: "start", padding: "11px 16px", border: 0, borderRadius: "9px", background: "#4338ca", color: "#fff", fontWeight: 800, cursor: customerActionBusy === "bulk" ? "wait" : "pointer" }}>{customerActionBusy === "bulk" ? "Sending to customers..." : `Send to all ${customerCount || 0} customers`}</button>
+                    </div>
+                  </section>
+                )}
+              </div>
+            ) : activeDashboardView === "support" ? (
+              <div
+                className="commerce-panel-shell"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #dbeafe",
+                  borderRadius: "20px",
+                  padding: "22px",
+                  boxSizing: "border-box",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#2563eb",
+                    textTransform: "uppercase",
+                    letterSpacing: ".12em",
+                    fontSize: ".72rem",
+                    fontWeight: 800,
+                  }}
+                >
+                  Customer care
+                </p>
+                <h3 style={{ margin: "8px 0 18px", fontSize: "1.5rem" }}>
+                  Customer care inbox
+                </h3>
+                <section aria-labelledby="product-conversations-title" style={{ marginBottom: "26px" }}>
+                  <h4 id="product-conversations-title" style={{ margin: "0 0 10px", color: "#173c2b", fontSize: "1.05rem" }}>Product conversations</h4>
+                  {productChatConversations.length ? (
+                    <div style={{ display: "grid", gap: "12px" }}>
+                      {productChatConversations.map((conversation) => (
+                        <article key={conversation.id} style={{ padding: "14px 0", borderTop: "1px solid #dfe7e2" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                            <div>
+                              <strong style={{ color: "#23372d" }}>{conversation.product_title}</strong>
+                              <div style={{ marginTop: "4px", color: "#52645a", fontSize: ".84rem" }}>
+                                {conversation.customer_name} · {conversation.customer_email} · {conversation.customer_phone}
+                              </div>
+                            </div>
+                            <span style={{ color: "#52645a", fontSize: ".78rem" }}>
+                              {conversation.assigned_to === "vendor" ? `Vendor: ${conversation.vendor_name || "product owner"}` : "Assigned to PAZ support"} · {conversation.status}
+                            </span>
+                          </div>
+                          <div style={{ display: "grid", gap: "8px", marginTop: "12px", maxHeight: "300px", overflowY: "auto" }}>
+                            {(conversation.messages || []).map((message) => (
+                              <div key={message.id} style={{ padding: "9px 11px", borderLeft: `3px solid ${message.sender_role === "customer" ? "#17633e" : message.sender_role === "vendor" ? "#c76b24" : "#3673a8"}`, background: "#f7f9f7" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", color: "#52645a", fontSize: ".76rem" }}>
+                                  <strong>{message.sender_name} · {message.sender_role}</strong>
+                                  <time dateTime={message.created_at}>{message.created_at ? new Date(message.created_at).toLocaleString() : ""}</time>
+                                </div>
+                                <div style={{ marginTop: "5px", color: "#263a30", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{message.message}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
+                            <textarea value={productChatReplyDrafts[conversation.id] || ""} onChange={(event) => setProductChatReplyDrafts((current) => ({ ...current, [conversation.id]: event.target.value }))} placeholder="Reply to the customer" maxLength={4000} rows="2" style={{ width: "100%", boxSizing: "border-box", padding: "9px 10px", border: "1px solid #cbd5e1", borderRadius: "6px", resize: "vertical", font: "inherit" }} />
+                            <button type="button" onClick={() => replyToProductChat(conversation)} disabled={productChatReplySaving === conversation.id || !String(productChatReplyDrafts[conversation.id] || "").trim()} style={{ justifySelf: "start", border: 0, borderRadius: "6px", padding: "9px 13px", background: productChatReplySaving === conversation.id ? "#cbd5e1" : "#17633e", color: productChatReplySaving === conversation.id ? "#475569" : "#fff", fontWeight: 800, cursor: productChatReplySaving === conversation.id ? "wait" : "pointer" }}>{productChatReplySaving === conversation.id ? "Sending reply…" : "Reply to conversation"}</button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : <p style={{ margin: 0, color: "#64748b" }}>No product conversations yet.</p>}
+                </section>
+                <h4 style={{ margin: "0 0 10px", color: "#173c2b", fontSize: "1.05rem" }}>Other support messages</h4>
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {supportMessages.length ? (
+                    supportMessages.map((message) => (
+                      <article
+                        key={`${message.source}-${message.id}`}
+                        style={{
+                          padding: "14px",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "12px",
+                          background:
+                            message.status === "open" ? "#eff6ff" : "#f8fafc",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "10px",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <strong>
+                            {message.source} ·{" "}
+                            {message.sender_name ||
+                              message.sender_email ||
+                              "Vendor"}
+                          </strong>
+                          <span
+                            style={{ color: "#64748b", fontSize: ".78rem" }}
+                          >
+                            {message.status} ·{" "}
+                            {message.created_at
+                              ? new Date(message.created_at).toLocaleString()
+                              : ""}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            marginTop: "8px",
+                            color: "#334155",
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {message.message}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: "8px",
+                            color: "#64748b",
+                            fontSize: ".82rem",
+                          }}
+                        >
+                          {message.sender_email}
+                        </div>
+                        {message.admin_reply && (
+                          <div style={{ marginTop: "12px", padding: "10px 12px", borderRadius: "9px", background: "#ecfdf5", border: "1px solid #bbf7d0", color: "#166534", whiteSpace: "pre-wrap" }}>
+                            <strong style={{ display: "block", marginBottom: "4px" }}>Admin reply</strong>
+                            {message.admin_reply}
+                          </div>
+                        )}
+                        <div style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
+                          <textarea value={supportReplyDrafts[message.id] || ""} onChange={(event) => setSupportReplyDrafts((current) => ({ ...current, [message.id]: event.target.value }))} placeholder="Write a reply to this chat" rows="2" style={{ width: "100%", boxSizing: "border-box", padding: "9px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", resize: "vertical", font: "inherit" }} />
+                          <button type="button" onClick={() => replyToSupportMessage(message)} disabled={supportReplySaving === message.id || !String(supportReplyDrafts[message.id] || "").trim()} style={{ justifySelf: "start", border: 0, borderRadius: "8px", padding: "9px 13px", background: supportReplySaving === message.id ? "#cbd5e1" : "#2563eb", color: supportReplySaving === message.id ? "#475569" : "#fff", fontWeight: 800, cursor: supportReplySaving === message.id ? "wait" : "pointer" }}>{supportReplySaving === message.id ? "Saving reply..." : "Reply to chat"}</button>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <p style={{ color: "#64748b" }}>
+                      No support messages have been received.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : activeDashboardView === "vendors" ? (
+              <div
+                className="commerce-panel-shell"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #dfe7ef",
+                  borderRadius: "20px",
+                  padding: "22px",
+                  boxSizing: "border-box",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                    marginBottom: "18px",
+                  }}
+                >
+                  <div>
+                    <p
+                      style={{
+                        margin: 0,
+                        color: "#0f766e",
+                        textTransform: "uppercase",
+                        letterSpacing: ".12em",
+                        fontSize: ".72rem",
+                        fontWeight: 800,
+                      }}
+                    >
+                      Trust and safety
+                    </p>
+                    <h3 style={{ margin: "8px 0 0", fontSize: "1.5rem" }}>
+                      Vendor monitor
+                    </h3>
+                  </div>
+                  <span
+                    style={{
+                      background: "#f0fdfa",
+                      color: "#0f766e",
+                      borderRadius: "999px",
+                      padding: "8px 12px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {vendorProfiles.length} accounts
+                  </span>
+                </div>
+                {false &&
+                  selectedVendor &&
+                  vendorEditForm &&
+                  !vendorEditing && (
+                    <section
+                      style={{
+                        marginBottom: "18px",
+                        padding: "18px",
+                        border: "1px solid #b7d9cf",
+                        borderRadius: "14px",
+                        background: "linear-gradient(135deg, #f8fffb, #f8fafc)",
+                      }}
+                      aria-labelledby="vendor-review-title"
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "12px",
+                          alignItems: "flex-start",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "#0f766e",
+                              textTransform: "uppercase",
+                              letterSpacing: ".1em",
+                              fontSize: ".7rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Vendor profile
+                          </p>
+                          <h4
+                            id="vendor-review-title"
+                            style={{
+                              margin: "6px 0 0",
+                              color: "#0f172a",
+                              fontSize: "1.25rem",
+                            }}
+                          >
+                            {selectedVendor.company_name || "Vendor profile"}
+                          </h4>
+                          <p
+                            style={{
+                              margin: "5px 0 0",
+                              color: "#64748b",
+                              fontSize: ".85rem",
+                            }}
+                          >
+                            {selectedVendor.contact_email ||
+                              "No email supplied"}
+                          </p>
+                          <p style={{ margin: "5px 0 0", color: "#475569", fontSize: ".85rem" }}>
+                            Sells: <strong>{selectedVendor.vendor_type === "groceries" ? "Groceries" : selectedVendor.vendor_type === "gadgets" ? "Gadgets & electronics" : "Books & digital products"}</strong>
+                          </p>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "8px",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setVendorEditing(true)}
+                            style={{
+                              border: 0,
+                              borderRadius: "8px",
+                              background: "#0f766e",
+                              color: "#fff",
+                              padding: "8px 12px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Edit profile
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVendor(null);
+                              setVendorEditForm(null);
+                              setVendorDocumentPreviewOpen(false);
+                            }}
+                            style={{
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              background: "#fff",
+                              padding: "8px 11px",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Close review
+                          </button>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit,minmax(180px,1fr))",
+                          gap: "10px",
+                          marginTop: "16px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "12px",
+                            background: "#fff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "block",
+                              color: "#64748b",
+                              fontSize: ".72rem",
+                              textTransform: "uppercase",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Status
+                          </span>
+                          <strong
+                            style={{
+                              display: "block",
+                              marginTop: "5px",
+                              color:
+                                selectedVendor.status === "approved"
+                                  ? "#166534"
+                                  : "#b45309",
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {selectedVendor.status || "pending"}
+                          </strong>
+                        </div>
+                        <div
+                          style={{
+                            padding: "12px",
+                            background: "#fff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "block",
+                              color: "#64748b",
+                              fontSize: ".72rem",
+                              textTransform: "uppercase",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Identity type
+                          </span>
+                          <strong
+                            style={{
+                              display: "block",
+                              marginTop: "5px",
+                              color: "#334155",
+                            }}
+                          >
+                            {selectedVendor.id_type || "Not supplied"}
+                          </strong>
+                        </div>
+                        <div
+                          style={{
+                            padding: "12px",
+                            background: "#fff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "10px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "block",
+                              color: "#64748b",
+                              fontSize: ".72rem",
+                              textTransform: "uppercase",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Payout
+                          </span>
+                          <strong
+                            style={{
+                              display: "block",
+                              marginTop: "5px",
+                              color: "#334155",
+                            }}
+                          >
+                            {selectedVendor.payout_bank_name || "Not supplied"}{" "}
+                            ·{" "}
+                            {selectedVendor.payout_account_number ||
+                              "Not supplied"}
+                          </strong>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: "12px",
+                          padding: "12px 14px",
+                          border: "1px solid #dbe7df",
+                          borderRadius: "10px",
+                          background: "#fff",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "10px",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div>
+                            <strong>Identity document</strong>
+                            <div
+                              style={{
+                                color: "#64748b",
+                                fontSize: ".78rem",
+                                marginTop: "3px",
+                              }}
+                            >
+                              {selectedVendor.id_document_path
+                                ? "Private verification document ready for review"
+                                : "No document supplied"}
+                            </div>
+                          </div>
+                          {selectedVendor.documentPreviewUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVendorDocumentPreviewOpen(
+                                  (current) => !current,
+                                )
+                              }
+                              style={{
+                                border: "1px solid #0f766e",
+                                borderRadius: "8px",
+                                background: vendorDocumentPreviewOpen
+                                  ? "#e6fffa"
+                                  : "#fff",
+                                color: "#0f766e",
+                                padding: "8px 11px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {vendorDocumentPreviewOpen
+                                ? "Hide document"
+                                : "Preview document"}
+                            </button>
+                          )}
+                        </div>
+                        {vendorDocumentPreviewOpen &&
+                          selectedVendor.documentPreviewUrl && (
+                            <iframe
+                              title="Vendor identity document preview"
+                              src={selectedVendor.documentPreviewUrl}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                height: "320px",
+                                marginTop: "12px",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: "8px",
+                                background: "#f8fafc",
+                              }}
+                            />
+                          )}
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit,minmax(220px,1fr))",
+                          gap: "12px",
+                          marginTop: "12px",
+                        }}
+                      >
+                        <div>
+                          <strong>
+                            Uploaded products (
+                            {selectedVendor.products?.length || 0})
+                          </strong>
+                          {(selectedVendor.products || []).map((product) => (
+                            <div
+                              key={product.id}
+                              style={{
+                                marginTop: "5px",
+                                color: "#475569",
+                                fontSize: ".84rem",
+                              }}
+                            >
+                              {product.title} · {product.currency}{" "}
+                              {product.price}
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <strong>
+                            Sales ({selectedVendor.sales?.length || 0})
+                          </strong>
+                          {(selectedVendor.sales || []).map((sale) => (
+                            <div
+                              key={sale.id}
+                              style={{
+                                marginTop: "5px",
+                                color: "#475569",
+                                fontSize: ".84rem",
+                              }}
+                            >
+                              {sale.product_title} x{sale.quantity} ·{" "}
+                              {sale.currency} {sale.vendor_amount}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+                {false && selectedVendor && vendorEditForm && vendorEditing && (
+                  <section
+                    style={{
+                      marginBottom: "18px",
+                      padding: "18px",
+                      border: "1px solid #b7d9cf",
+                      borderRadius: "14px",
+                      background: "linear-gradient(135deg, #f8fffb, #f8fafc)",
+                    }}
+                    aria-labelledby="vendor-review-title"
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        alignItems: "flex-start",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <p
+                          style={{
+                            margin: 0,
+                            color: "#0f766e",
+                            textTransform: "uppercase",
+                            letterSpacing: ".1em",
+                            fontSize: ".7rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Selected vendor
+                        </p>
+                        <h4
+                          id="vendor-review-title"
+                          style={{
+                            margin: "6px 0 0",
+                            color: "#0f172a",
+                            fontSize: "1.2rem",
+                          }}
+                        >
+                          {vendorEditForm.company_name || "Vendor profile"}
+                        </h4>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          type="button"
+                          onClick={() => setVendorEditing(false)}
+                          style={{
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "8px",
+                            background: "#fff",
+                            padding: "7px 10px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Back to profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedVendor(null);
+                            setVendorEditForm(null);
+                          }}
+                          style={{
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "8px",
+                            background: "#fff",
+                            padding: "7px 10px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Close review
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "minmax(260px, .9fr) minmax(320px, 1.1fr)",
+                        gap: "18px",
+                        marginTop: "16px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: "12px",
+                          border: "1px solid #dbe7df",
+                          borderRadius: "10px",
+                          background: "#fff",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <strong>Identity document</strong>
+                          {selectedVendor.documentPreviewUrl && (
+                            <a
+                              href={selectedVendor.documentPreviewUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                color: "#0f766e",
+                                fontWeight: 800,
+                                fontSize: ".8rem",
+                              }}
+                            >
+                              Open full preview
+                            </a>
+                          )}
+                        </div>
+                        {selectedVendor.documentPreviewUrl ? (
+                          <iframe
+                            title="Vendor identity document preview"
+                            src={selectedVendor.documentPreviewUrl}
+                            style={{
+                              width: "100%",
+                              height: "300px",
+                              marginTop: "10px",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              background: "#f8fafc",
+                            }}
+                          />
+                        ) : (
+                          <p
+                            style={{
+                              color: "#64748b",
+                              fontSize: ".82rem",
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {selectedVendor.loading
+                              ? "Preparing secure preview..."
+                              : selectedVendor.id_document_path
+                                ? "Preview unavailable for this document type."
+                                : "No identity document supplied."}
+                          </p>
+                        )}
+                      </div>
+                      <div style={{ display: "grid", gap: "9px" }}>
+                        <label
+                          style={{
+                            display: "grid",
+                            gap: "4px",
+                            color: "#334155",
+                            fontSize: ".8rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Business name
+                          <input
+                            value={vendorEditForm.company_name || ""}
+                            onChange={(event) =>
+                              setVendorEditForm((current) => ({
+                                ...current,
+                                company_name: event.target.value,
+                              }))
+                            }
+                            style={{
+                              padding: "9px 10px",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              font: "inherit",
+                              fontWeight: 400,
+                            }}
+                          />
+                        </label>
+                        <label
+                          style={{
+                            display: "grid",
+                            gap: "4px",
+                            color: "#334155",
+                            fontSize: ".8rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Vendor type
+                          <select
+                            value={vendorEditForm.vendor_type || "books"}
+                            onChange={(event) =>
+                              setVendorEditForm((current) => ({
+                                ...current,
+                                vendor_type: event.target.value,
+                              }))
+                            }
+                            style={{
+                              padding: "9px 10px",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              background: "#fff",
+                            }}
+                          >
+                            <option value="books">Books & digital products</option>
+                            <option value="groceries">Groceries</option>
+                            <option value="gadgets">Gadgets & electronics</option>
+                          </select>
+                        </label>
+                        <label
+                          style={{
+                            display: "grid",
+                            gap: "4px",
+                            color: "#334155",
+                            fontSize: ".8rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Contact email
+                          <input
+                            type="email"
+                            value={vendorEditForm.contact_email || ""}
+                            onChange={(event) =>
+                              setVendorEditForm((current) => ({
+                                ...current,
+                                contact_email: event.target.value,
+                              }))
+                            }
+                            style={{
+                              padding: "9px 10px",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              font: "inherit",
+                              fontWeight: 400,
+                            }}
+                          />
+                        </label>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "9px",
+                          }}
+                        >
+                          <label
+                            style={{
+                              display: "grid",
+                              gap: "4px",
+                              color: "#334155",
+                              fontSize: ".8rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            ID type
+                            <select
+                              value={vendorEditForm.id_type || ""}
+                              onChange={(event) =>
+                                setVendorEditForm((current) => ({
+                                  ...current,
+                                  id_type: event.target.value,
+                                }))
+                              }
+                              style={{
+                                padding: "9px 10px",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                background: "#fff",
+                              }}
+                            >
+                              <option>National ID</option>
+                              <option>Passport</option>
+                              <option>Driver's licence</option>
+                              <option>Business registration</option>
+                            </select>
+                          </label>
+                          <label
+                            style={{
+                              display: "grid",
+                              gap: "4px",
+                              color: "#334155",
+                              fontSize: ".8rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Status
+                            <select
+                              value={vendorEditForm.status || "pending"}
+                              onChange={(event) =>
+                                setVendorEditForm((current) => ({
+                                  ...current,
+                                  status: event.target.value,
+                                }))
+                              }
+                              style={{
+                                padding: "9px 10px",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                background: "#fff",
+                              }}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="approved">Approved</option>
+                              <option value="rejected">Rejected</option>
+                              <option value="suspended">Suspended</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label
+                          style={{
+                            display: "grid",
+                            gap: "4px",
+                            color: "#334155",
+                            fontSize: ".8rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Account holder
+                          <input
+                            value={vendorEditForm.payout_account_name || ""}
+                            onChange={(event) =>
+                              setVendorEditForm((current) => ({
+                                ...current,
+                                payout_account_name: event.target.value,
+                              }))
+                            }
+                            style={{
+                              padding: "9px 10px",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              font: "inherit",
+                              fontWeight: 400,
+                            }}
+                          />
+                        </label>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "9px",
+                          }}
+                        >
+                          <label
+                            style={{
+                              display: "grid",
+                              gap: "4px",
+                              color: "#334155",
+                              fontSize: ".8rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Bank
+                            <input
+                              value={vendorEditForm.payout_bank_name || ""}
+                              onChange={(event) =>
+                                setVendorEditForm((current) => ({
+                                  ...current,
+                                  payout_bank_name: event.target.value,
+                                }))
+                              }
+                              style={{
+                                padding: "9px 10px",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                font: "inherit",
+                                fontWeight: 400,
+                              }}
+                            />
+                          </label>
+                          <label
+                            style={{
+                              display: "grid",
+                              gap: "4px",
+                              color: "#334155",
+                              fontSize: ".8rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            Account number
+                            <input
+                              value={vendorEditForm.payout_account_number || ""}
+                              onChange={(event) =>
+                                setVendorEditForm((current) => ({
+                                  ...current,
+                                  payout_account_number: event.target.value,
+                                }))
+                              }
+                              style={{
+                                padding: "9px 10px",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "8px",
+                                font: "inherit",
+                                fontWeight: 400,
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <label
+                          style={{
+                            display: "grid",
+                            gap: "4px",
+                            color: "#334155",
+                            fontSize: ".8rem",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Review note
+                          <textarea
+                            rows="2"
+                            value={vendorEditForm.rejection_reason || ""}
+                            onChange={(event) =>
+                              setVendorEditForm((current) => ({
+                                ...current,
+                                rejection_reason: event.target.value,
+                              }))
+                            }
+                            placeholder="Add an internal rejection or review note"
+                            style={{
+                              padding: "9px 10px",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              resize: "vertical",
+                              font: "inherit",
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={vendorSaving}
+                          onClick={saveVendorProfile}
+                          style={{
+                            justifySelf: "start",
+                            border: 0,
+                            borderRadius: "8px",
+                            padding: "10px 14px",
+                            background: vendorSaving ? "#cbd5e1" : "#0f766e",
+                            color: vendorSaving ? "#475569" : "#fff",
+                            fontWeight: 800,
+                            cursor: vendorSaving ? "wait" : "pointer",
+                          }}
+                        >
+                          {vendorSaving
+                            ? "Saving profile..."
+                            : "Save vendor profile"}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
+                <div
+                  style={{ display: "grid", gap: "12px", marginBottom: "18px" }}
+                >
+                  <div
+                    role="tablist"
+                    aria-label="Vendor controls"
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                      borderBottom: "1px solid #e2e8f0",
+                      paddingBottom: "10px",
+                    }}
+                  >
+                    {vendorTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={vendorTab === tab.id}
+                        onClick={() => focusDashboardView(setVendorTab, tab.id)}
+                        style={{
+                          border: "1px solid",
+                          borderColor:
+                            vendorTab === tab.id ? "#0f766e" : "#cbd5e1",
+                          borderRadius: "999px",
+                          padding: "9px 13px",
+                          background: vendorTab === tab.id ? "#0f766e" : "#fff",
+                          color: vendorTab === tab.id ? "#fff" : "#334155",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {tab.label}
+                        {tab.id !== "profiles"
+                          ? ` (${vendorProfiles.filter((vendor) => tab.statuses.includes(vendor.status)).length})`
+                          : ` (${vendorProfiles.length})`}
+                      </button>
+                    ))}
+                  </div>
+                  <label style={{ position: "relative", display: "block" }}>
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "#64748b",
+                      }}
+                      aria-hidden="true"
+                    >
+                      <i className="fa-solid fa-magnifying-glass" />
+                    </span>
+                    <input
+                      type="search"
+                      value={vendorSearch}
+                      onChange={(event) => setVendorSearch(event.target.value)}
+                      placeholder="Search vendors by name, email, bank, or status"
+                      aria-label="Search vendors"
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: "12px 38px",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "10px",
+                        font: "inherit",
+                      }}
+                    />
+                    {vendorSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setVendorSearch("")}
+                        aria-label="Clear vendor search"
+                        style={{
+                          position: "absolute",
+                          right: "10px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          border: 0,
+                          background: "transparent",
+                          color: "#64748b",
+                          fontSize: "1.1rem",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </label>
+                </div>
+                <div className="vendor-monitor-list">
+                  {visibleVendorProfiles.length ? (
+                    visibleVendorProfiles.map((vendor) => (
+                      <article
+                        key={vendor.id}
+                        className="vendor-monitor-card"
+                        ref={(element) => {
+                          if (element) vendorCardRefs.current[vendor.id] = element;
+                          else delete vendorCardRefs.current[vendor.id];
+                        }}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "14px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          className="vendor-monitor-card-header vendor-monitor-card-header-clickable"
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            if (event.target.closest("button, input, textarea, a")) return;
+                            viewVendorDetails(vendor);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              viewVendorDetails(vendor);
+                            }
+                          }}
+                          aria-label={`View ${vendor.company_name || "vendor"} details`}
+                        >
+                          <img
+                            src={vendor.logo_url || "/logo/logomain.png"}
+                            alt=""
+                            style={{
+                              width: "56px",
+                              height: "56px",
+                              borderRadius: "12px",
+                              objectFit: "cover",
+                            }}
+                          />
+                          <div className="vendor-monitor-card-meta">
+                            <strong style={{ color: "#0f172a" }}>
+                              {vendor.company_name}
+                            </strong>
+                            <div
+                              style={{ color: "#64748b", fontSize: ".84rem" }}
+                            >
+                              {vendor.contact_email} · {vendor.id_type}
+                            </div>
+                            <div style={{ color: "#475569", fontSize: ".82rem" }}>
+                              Sells: {vendor.vendor_type === "groceries" ? "Groceries" : vendor.vendor_type === "gadgets" ? "Gadgets & electronics" : "Books & digital products"}
+                            </div>
+                            <div
+                              style={{ color: "#475569", fontSize: ".82rem" }}
+                            >
+                              Payout:{" "}
+                              {vendor.payout_bank_name || "Not provided"} ·{" "}
+                              {vendor.payout_account_number || "Not provided"}
+                            </div>
+                            <div className="vendor-monitor-card-counts" aria-label="Vendor record counts">
+                              <span>Products {vendorRecordCounts[vendor.id]?.products || 0}</span>
+                              <span>Sales {vendorRecordCounts[vendor.id]?.sales || 0}</span>
+                              {vendorRecordCounts[vendor.id]?.newRecords > 0 && (
+                                <strong>{vendorRecordCounts[vendor.id].newRecords} new</strong>
+                              )}
+                            </div>
+                          </div>
+                          <div className="vendor-monitor-card-actions">
+                            <button
+                              type="button"
+                              onClick={() => viewVendorDetails(vendor)}
+                              aria-label={selectedVendor?.id === vendor.id && !selectedVendor.loading ? "Hide vendor profile" : "View vendor profile"}
+                              title={selectedVendor?.id === vendor.id && !selectedVendor.loading ? "Hide vendor profile" : "View vendor profile"}
+                              style={{
+                                border: "1px solid #cbd5e1",
+                                background: "#fff",
+                                borderRadius: "8px",
+                                padding: "8px 10px",
+                                fontWeight: 700,
+                              }}
+                            >
+                              <i className={`fa-solid ${selectedVendor?.id === vendor.id && !selectedVendor.loading ? "fa-chevron-up" : "fa-eye"} vendor-monitor-action-icon`} aria-hidden="true" />
+                              <span className="vendor-monitor-action-label">
+                              {selectedVendor?.id === vendor.id &&
+                              !selectedVendor.loading
+                                ? "Hide profile"
+                                : "View profile"}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => sendVendorPasswordReset(vendor)}
+                              aria-label="Reset vendor password"
+                              title="Reset vendor password"
+                              disabled={vendorPasswordResetting === vendor.id || !vendor.contact_email}
+                              style={{
+                                border: "1px solid #f97316",
+                                background: "#fff7ed",
+                                color: "#c2410c",
+                                borderRadius: "8px",
+                                padding: "8px 10px",
+                                fontWeight: 800,
+                                cursor: vendorPasswordResetting === vendor.id ? "wait" : "pointer",
+                              }}
+                            >
+                              <i className={`fa-solid ${vendorPasswordResetting === vendor.id ? "fa-spinner fa-spin" : "fa-key"} vendor-monitor-action-icon`} aria-hidden="true" />
+                              <span className="vendor-monitor-action-label">
+                                {vendorPasswordResetting === vendor.id ? "Sending..." : "Reset password"}
+                              </span>
+                            </button>
+                            {vendor.status === "pending" && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateVendorStatus(vendor, "approved")
+                                  }
+                                  aria-label="Approve vendor"
+                                  title="Approve vendor"
+                                  style={{
+                                    border: 0,
+                                    background: "#166534",
+                                    color: "#fff",
+                                    borderRadius: "8px",
+                                    padding: "8px 10px",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  <i className="fa-solid fa-check vendor-monitor-action-icon" aria-hidden="true" />
+                                  <span className="vendor-monitor-action-label">Approve</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateVendorStatus(vendor, "rejected")
+                                  }
+                                  aria-label="Reject vendor"
+                                  title="Reject vendor"
+                                  style={{
+                                    border: 0,
+                                    background: "#b91c1c",
+                                    color: "#fff",
+                                    borderRadius: "8px",
+                                    padding: "8px 10px",
+                                    fontWeight: 800,
+                                  }}
+                                >
+                                  <i className="fa-solid fa-xmark vendor-monitor-action-icon" aria-hidden="true" />
+                                  <span className="vendor-monitor-action-label">Reject</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {vendorTab === "approved" && (
+                          <div className="vendor-monitor-sales">
+                            <strong style={{ color: "#166534" }}>Sold products</strong>
+                            {(approvedVendorSales[vendor.id] || []).length ? (
+                              <div style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
+                                {approvedVendorSales[vendor.id].map((sale) => (
+                                  <div key={sale.id} className="vendor-monitor-sale-row">
+                                    <span><strong style={{ color: "#0f172a" }}>{sale.product_title || "Product"}</strong> · Qty {sale.quantity || 1} · Order {sale.order_number || "N/A"}</span>
+                                    <span>{sale.currency || "NGN"} {sale.vendor_amount || 0} · {sale.payout_status || "pending"}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : <span style={{ display: "block", marginTop: "5px", color: "#64748b", fontSize: ".82rem" }}>No sales recorded for this vendor yet.</span>}
+                          </div>
+                        )}
+                        {selectedVendor?.id === vendor.id && (
+                          <div
+                            className="vendor-monitor-profile-panel"
+                            style={{
+                              padding: "16px",
+                              background: "#f8fafc",
+                              borderTop: "1px solid #e2e8f0",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: "10px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <h4 style={{ margin: "0 0 10px" }}>
+                                {selectedVendor.company_name} profile details
+                              </h4>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setVendorEditing((current) => !current)
+                                }
+                                style={{
+                                  border: 0,
+                                  borderRadius: "8px",
+                                  background: "#0f766e",
+                                  color: "#fff",
+                                  padding: "8px 11px",
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {vendorEditing
+                                  ? "View profile"
+                                  : "Edit profile"}
+                              </button>
+                            </div>
+                            <p className="vendor-monitor-profile-details" style={{ margin: "5px 0", color: "#475569" }}>
+                              Status: <strong>{selectedVendor.status}</strong>
+                            </p>
+                            <p className="vendor-monitor-profile-details" style={{ margin: "5px 0", color: "#475569" }}>
+                              Email:{" "}
+                              <strong>
+                                {selectedVendor.contact_email || "Not supplied"}
+                              </strong>
+                            </p>
+                            <div
+                              style={{
+                                margin: "12px 0",
+                                padding: "12px",
+                                border: "1px solid #dbe7df",
+                                borderRadius: "10px",
+                                background: "#fff",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  gap: "10px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <div>
+                                  <strong>Identity document</strong>
+                                  <div
+                                    style={{
+                                      color: "#64748b",
+                                      fontSize: ".78rem",
+                                      marginTop: "3px",
+                                    }}
+                                  >
+                                    {selectedVendor.documentPreviewUrl
+                                      ? vendorDocumentPreviewOpen
+                                        ? "Document preview open"
+                                        : "Identity document ready to preview"
+                                      : selectedVendor.id_document_path
+                                        ? "Preview link unavailable"
+                                        : "Not supplied"}
+                                  </div>
+                                </div>
+                                {selectedVendor.documentPreviewUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setVendorDocumentPreviewOpen(
+                                        (current) => !current,
+                                      )
+                                    }
+                                    style={{
+                                      border: "1px solid #0f766e",
+                                      borderRadius: "8px",
+                                      background: vendorDocumentPreviewOpen
+                                        ? "#e6fffa"
+                                        : "#fff",
+                                      color: "#0f766e",
+                                      padding: "8px 11px",
+                                      fontWeight: 800,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    {vendorDocumentPreviewOpen
+                                      ? "Hide document"
+                                      : "Preview document"}
+                                  </button>
+                                )}
+                              </div>
+                              {vendorDocumentPreviewOpen && selectedVendor.documentPreviewUrl && (/\.(jpe?g|png|webp)$/i.test(selectedVendor.id_document_path || "") ? <img src={selectedVendor.documentPreviewUrl} alt="Vendor identity document" style={{ display: "block", width: "100%", maxHeight: "520px", objectFit: "contain", marginTop: "12px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }} /> : <iframe title="Vendor identity document preview" src={selectedVendor.documentPreviewUrl} style={{ display: "block", width: "100%", height: "420px", marginTop: "12px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }} />)}
+                            </div>
+                            <p className="vendor-monitor-profile-details" style={{ margin: "5px 0", color: "#475569" }}>
+                              Payout:{" "}
+                              <strong>
+                                {selectedVendor.payout_account_name ||
+                                  "Not supplied"}{" "}
+                                ·{" "}
+                                {selectedVendor.payout_bank_name ||
+                                  "Not supplied"}{" "}
+                                ·{" "}
+                                {selectedVendor.payout_account_number ||
+                                  "Not supplied"}{" "}
+                                · {selectedVendor.payout_currency || "NGN"}
+                              </strong>
+                            </p>
+                            {vendorEditing &&
+                              vendorEditForm?.id === selectedVendor.id && (
+                                <div
+                                  className="vendor-monitor-profile-form"
+                                  style={{
+                                    display: "grid",
+                                    gap: "9px",
+                                    marginTop: "14px",
+                                    padding: "14px",
+                                    border: "1px solid #b7d9cf",
+                                    borderRadius: "10px",
+                                    background: "#fff",
+                                  }}
+                                >
+                                  <strong style={{ color: "#0f766e" }}>
+                                    Edit vendor profile
+                                  </strong>
+                                  <input
+                                    value={vendorEditForm.company_name || ""}
+                                    onChange={(event) =>
+                                      setVendorEditForm((current) => ({
+                                        ...current,
+                                        company_name: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="Business name"
+                                    style={{
+                                      padding: "9px 10px",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "8px",
+                                    }}
+                                  />
+                                  <input
+                                    type="email"
+                                    value={vendorEditForm.contact_email || ""}
+                                    onChange={(event) =>
+                                      setVendorEditForm((current) => ({
+                                        ...current,
+                                        contact_email: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="Contact email"
+                                    style={{
+                                      padding: "9px 10px",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "8px",
+                                    }}
+                                  />
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "1fr 1fr",
+                                      gap: "9px",
+                                    }}
+                                  >
+                                    <input
+                                      value={
+                                        vendorEditForm.payout_bank_name || ""
+                                      }
+                                      onChange={(event) =>
+                                        setVendorEditForm((current) => ({
+                                          ...current,
+                                          payout_bank_name: event.target.value,
+                                        }))
+                                      }
+                                      placeholder="Bank"
+                                      style={{
+                                        padding: "9px 10px",
+                                        border: "1px solid #cbd5e1",
+                                        borderRadius: "8px",
+                                      }}
+                                    />
+                                    <input
+                                      value={
+                                        vendorEditForm.payout_account_number ||
+                                        ""
+                                      }
+                                      onChange={(event) =>
+                                        setVendorEditForm((current) => ({
+                                          ...current,
+                                          payout_account_number:
+                                            event.target.value,
+                                        }))
+                                      }
+                                      placeholder="Account number"
+                                      style={{
+                                        padding: "9px 10px",
+                                        border: "1px solid #cbd5e1",
+                                        borderRadius: "8px",
+                                      }}
+                                    />
+                                  </div>
+                                  <textarea
+                                    value={
+                                      vendorEditForm.rejection_reason || ""
+                                    }
+                                    onChange={(event) =>
+                                      setVendorEditForm((current) => ({
+                                        ...current,
+                                        rejection_reason: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="Review note"
+                                    rows="2"
+                                    style={{
+                                      padding: "9px 10px",
+                                      border: "1px solid #cbd5e1",
+                                      borderRadius: "8px",
+                                      resize: "vertical",
+                                      font: "inherit",
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={vendorSaving}
+                                    onClick={saveVendorProfile}
+                                    style={{
+                                      justifySelf: "start",
+                                      border: 0,
+                                      borderRadius: "8px",
+                                      background: vendorSaving
+                                        ? "#cbd5e1"
+                                        : "#0f766e",
+                                      color: vendorSaving ? "#475569" : "#fff",
+                                      padding: "9px 13px",
+                                      fontWeight: 800,
+                                      cursor: vendorSaving ? "wait" : "pointer",
+                                    }}
+                                  >
+                                    {vendorSaving
+                                      ? "Saving..."
+                                      : "Save vendor profile"}
+                                  </button>
+                                </div>
+                              )}
+                            {selectedVendor.loading ? (
+                              <p>Loading products and sales...</p>
+                            ) : (
+                              <div
+                                className="vendor-monitor-profile-columns"
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns:
+                                    "repeat(auto-fit,minmax(220px,1fr))",
+                                  gap: "12px",
+                                  marginTop: "14px",
+                                }}
+                              >
+                                <div>
+                                  <strong>
+                                    Uploaded products (
+                                    {selectedVendor.products?.length || 0})
+                                  </strong>
+                                  {(selectedVendor.products || []).map(
+                                    (product) => (
+                                      <div
+                                        key={product.id}
+                                        style={{
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          alignItems: "center",
+                                          gap: "8px",
+                                          marginTop: "8px",
+                                          padding: "9px",
+                                          color: "#475569",
+                                          background: "#fff",
+                                          border: "1px solid #e2e8f0",
+                                          borderRadius: "8px",
+                                        }}
+                                      >
+                                        <span>
+                                          <strong style={{ color: "#0f172a" }}>{product.title}</strong><br />
+                                          <small>{product.currency} {product.price} · {product.status || "in_review"} · {product.name_verified ? "Name verified" : "Name not verified"}</small>
+                                        </span>
+                                        <button type="button" onClick={() => openProductReview(product)} style={{ border: "1px solid #0f766e", borderRadius: "7px", background: "#fff", color: "#0f766e", padding: "7px 9px", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                          Review
+                                        </button>
+                                      </div>
+                                    ),
+                                  )}
+                                  {productReviewModal && productReviewModal.vendor_id === selectedVendor.id && (
+                                    <div className="product-review-backdrop" role="dialog" aria-modal="true" aria-labelledby="product-review-title">
+                                      <div className="product-review-modal">
+                                        <div className="product-review-heading">
+                                          <div><span style={{ color: "#0f766e", fontSize: ".72rem", fontWeight: 800, textTransform: "uppercase" }}>Product review</span><h3 id="product-review-title" style={{ margin: "5px 0" }}>{productReviewModal.title}</h3><small style={{ color: "#64748b" }}>ID: {productReviewModal.id}</small></div>
+                                          <button className="product-review-close" type="button" onClick={() => setProductReviewModal(null)} aria-label="Close product review">×</button>
+                                        </div>
+                                        <div className="product-review-content">
+                                          <label><strong>Approval status</strong><select value={productReviewModal.status || "in_review"} onChange={(event) => setProductReviewModal((current) => ({ ...current, status: event.target.value }))} style={{ display: "block", width: "100%", marginTop: "5px", padding: "10px", border: "1px solid #cbd5e1", borderRadius: "8px" }}><option value="in_review">In review</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="published">Published</option></select></label>
+                                          {(() => {
+                                            const isBook = (productReviewModal.vendor_type || "books") === "books";
+                                            const checks = [
+                                              { key: "name_verified", label: "Product name", icon: "N", content: <strong className="product-verification-value">{productReviewModal.title || "No product name supplied"}</strong> },
+                                              { key: "description_verified", label: "Description", icon: "D", content: <span className="product-verification-value">{productReviewModal.description || "No description supplied"}</span> },
+                                              { key: "amount_verified", label: "Amount", icon: "$", content: <strong className="product-verification-value">{productReviewModal.currency || "NGN"} {productReviewModal.price ?? 0}</strong> },
+                                              { key: "cover_verified", label: "Cover image", icon: "C", content: productReviewModal.cover ? <img className="product-verification-cover" src={productReviewModal.cover} alt={`${productReviewModal.title} cover`} /> : <span className="product-verification-value">No cover image supplied</span> },
+                                              ...(isBook ? [{ key: "attachment_verified", label: "Book preview", icon: "A", content: productReviewModal.filePreviewLoading ? <span className="product-verification-value">Loading book preview...</span> : productReviewModal.filePreviewUrl ? <a className="product-verification-value product-verification-link" href={productReviewModal.filePreviewUrl} target="_blank" rel="noreferrer">Preview book</a> : <span className="product-verification-value">{productReviewModal.filePreviewError || "Book preview unavailable"}</span> }] : []),
+                                            ];
+                                            const requiredChecks = [...checks.map((check) => check.key)];
+                                            const allVerified = requiredChecks.every((key) => productReviewModal[key]);
+                                            const verificationPayload = (value) => Object.fromEntries(requiredChecks.map((key) => [key, value ? true : Boolean(productReviewModal[key])]));
+                                            return <>
+                                              <div className="product-verification-list">
+                                                {checks.map((check) => {
+                                                  const verified = Boolean(productReviewModal[check.key]);
+                                                  return <div className={`product-verification-row ${verified ? "is-verified" : ""}`} key={check.key}>
+                                                    <span className="product-verification-copy"><span className="product-verification-icon" aria-hidden="true">{check.icon}</span><span><strong>{check.label}</strong><span className="product-verification-preview">{check.content}</span></span></span>
+                                                    <button className="product-verification-toggle" type="button" role="switch" aria-checked={verified} title={`${verified ? "Turn off" : "Turn on"} ${check.label.toLowerCase()} verification`} onClick={() => setProductReviewModal((current) => ({ ...current, [check.key]: !current[check.key] }))}><span className="product-verification-toggle-knob" aria-hidden="true" />{verified ? "On" : "Off"}</button>
+                                                  </div>;
+                                                })}
+                                              </div>
+                                              {!isBook && <div className="product-verification-list">
+                                                <strong>Inventory details</strong>
+                                                {productReviewModal.vendor_type === "groceries"
+                                                  ? <span>{productReviewModal.stock_count ?? 0} {productReviewModal.stock_unit || "piece"}{productReviewModal.expiry_date ? ` · Expires ${productReviewModal.expiry_date}` : ""}</span>
+                                                  : <span>{[productReviewModal.brand, productReviewModal.model, productReviewModal.condition, productReviewModal.warranty_period ? `Warranty: ${productReviewModal.warranty_period}` : ""].filter(Boolean).join(" · ") || "No gadget details supplied"}</span>}
+                                              </div>}
+                                              <div className="product-review-actions">
+                                                <button className="product-review-save" type="button" onClick={() => updateStoreProductReviewStatus(productReviewModal, productReviewModal.status || "in_review", verificationPayload(false))}><span aria-hidden="true">✓</span> Save review</button>
+                                                <button className="product-review-again" type="button" onClick={() => requestProductReviewAgain(productReviewModal)}><span aria-hidden="true">↻</span> Review again</button>
+                                                <button className="product-review-publish" type="button" disabled={!allVerified} onClick={() => updateStoreProductReviewStatus(productReviewModal, "published", verificationPayload(true))}><span aria-hidden="true">↗</span> Publish to shop</button>
+                                              </div>
+                                            </>;
+                                          })()}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <strong>
+                                    Sales ({selectedVendor.sales?.length || 0})
+                                  </strong>
+                                  {(selectedVendor.sales || []).map((sale) => (
+                                    <div
+                                      key={sale.id}
+                                      style={{
+                                        marginTop: "6px",
+                                        color: "#475569",
+                                      }}
+                                    >
+                                      {sale.product_title} x{sale.quantity} ·{" "}
+                                      {sale.currency} {sale.vendor_amount} ·{" "}
+                                      {sale.payout_status}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    ))
+                  ) : (
+                    <p style={{ color: "#64748b" }}>
+                      {vendorProfiles.length
+                        ? "No vendors match this tab or search."
+                        : "No vendor accounts have been submitted."}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <h2
+                  style={{
+                    margin: 0,
+                    fontSize: "2rem",
+                    fontWeight: 800,
+                    color: "#1a1a1a",
+                  }}
+                >
+                  {activeDashboardLabel}
+                </h2>
+                <p
+                  style={{
+                    margin: "8px 0 0",
+                    fontSize: "1.05rem",
+                    color: "#4b5563",
+                  }}
+                >
+                  {activeDashboardView === "visitors"
+                    ? "Visitors logged from the main site."
+                    : activeDashboardView === "teens"
+                      ? "Teens registration form details submitted through the public site."
+                      : activeDashboardView === "messages"
+                        ? "Messages submitted via the main contact form."
+                        : activeDashboardView === "bookings"
+                          ? "Session booking requests submitted through the public site."
+                          : activeDashboardView === "feedback"
+                            ? "Parent mentoring feedback responses submitted through the public survey."
+                            : activeDashboardView === "slider"
+                              ? "Testimonials currently published in the Client Voices slider on the home page."
+                              : "Testimonials submitted from the site and available for review."}
+                </p>
+              </>
+            )}
+            {showDashboardTable && (
+              <>
+                <div className="dashboard-actions-row">
+                  <button
+                    className="dashboard-refresh-button"
+                    type="button"
+                    onClick={refreshAdminData}
+                    disabled={refreshLoading}
+                    title={refreshLoading ? "Refreshing" : "Refresh"}
+                    aria-label={refreshLoading ? "Refreshing" : "Refresh"}
+                    style={{
+                      border: "1px solid #b7d9cf",
+                      background: refreshLoading ? "#dcebe6" : "#e8f6f1",
+                      color: "#17634f",
+                      borderRadius: "999px",
+                      padding: "0.8rem 1.2rem",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: refreshLoading ? "wait" : "pointer",
+                    }}
+                  >
+                    <i
+                      className={`fa-solid ${refreshLoading ? "fa-spinner fa-spin" : "fa-rotate"}`}
+                      aria-hidden="true"
+                    ></i>{" "}
+                    <span>Refresh</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-action-button"
+                    aria-label="All rows"
+                    title="All rows"
+                    style={{
+                      border: "1px solid #d8dfe7",
+                      background: "#f0f1f2",
+                      color: "#1f2937",
+                      borderRadius: "999px",
+                      padding: "0.8rem 1.2rem",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <i
+                      className="fa-solid fa-table-list"
+                      aria-hidden="true"
+                    ></i>{" "}
+                    <span>All rows</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-action-button"
+                    aria-label="Selected rows"
+                    title="Selected rows"
+                    style={{
+                      border: "1px solid #d8dfe7",
+                      background: "#f0f1f2",
+                      color: "#1f2937",
+                      borderRadius: "999px",
+                      padding: "0.8rem 1.2rem",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <i
+                      className="fa-solid fa-square-check"
+                      aria-hidden="true"
+                    ></i>{" "}
+                    <span>Selected rows (0)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-action-button"
+                    onClick={deleteSelected}
+                    disabled={selectedRowIds.length === 0}
+                    aria-label={
+                      activeDashboardView === "slider"
+                        ? "Unpost selected"
+                        : "Delete selected"
+                    }
+                    title={
+                      activeDashboardView === "slider"
+                        ? "Unpost selected"
+                        : "Delete selected"
+                    }
+                    style={{
+                      border: "1px solid #d8dfe7",
+                      background:
+                        selectedRowIds.length === 0 ? "#f7f7f7" : "#f0f1f2",
+                      color: "#1f2937",
+                      borderRadius: "999px",
+                      padding: "0.8rem 1.2rem",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor:
+                        selectedRowIds.length === 0 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    <i
+                      className={`fa-solid ${activeDashboardView === "slider" ? "fa-eye-slash" : "fa-trash-can"}`}
+                      aria-hidden="true"
+                    ></i>{" "}
+                    <span>
+                      {activeDashboardView === "slider"
+                        ? "Unpost selected"
+                        : "Delete selected"}{" "}
+                      ({selectedRowIds.length})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-action-button"
+                    aria-label="Preview PDF"
+                    title="Preview PDF"
+                    style={{
+                      border: "none",
+                      background: "#f0f1f2",
+                      color: "#1f2937",
+                      borderRadius: "999px",
+                      padding: "0.8rem 1.2rem",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <i className="fa-solid fa-file-pdf" aria-hidden="true"></i>{" "}
+                    <span>Preview PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-action-button"
+                    aria-label="Print responses"
+                    title="Print responses"
+                    style={{
+                      border: "none",
+                      background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                      color: "#fff",
+                      borderRadius: "999px",
+                      padding: "0.8rem 1.5rem",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      boxShadow: "0 12px 22px rgba(92,74,228,0.22)",
+                    }}
+                  >
+                    <i className="fa-solid fa-print" aria-hidden="true"></i>{" "}
+                    <span>Print responses</span>
+                  </button>
+                  {activeFilterDefinitions.length > 0 && (
+                    <div className="dashboard-filters">
+                      {filterOptions.map((filter) => (
+                        <label
+                          key={filter.key}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            fontSize: "0.95rem",
+                            color: "#374151",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {filter.label}
+                          <CustomDropdown
+                            value={activeFilters[filter.key] || ""}
+                            onChange={(value) =>
+                              setTableFilters((current) => ({
+                                ...current,
+                                [activeDashboardView]: {
+                                  ...current[activeDashboardView],
+                                  [filter.key]: value,
+                                },
+                              }))
+                            }
+                            ariaLabel={filter.label}
+                            placeholder={`All ${filter.label.toLowerCase()}s`}
+                            options={[
+                              {
+                                value: "",
+                                label: `All ${filter.label.toLowerCase()}s`,
+                              },
+                              ...filter.options.map((option) => ({
+                                value: option,
+                                label: option,
+                              })),
+                            ]}
+                          />
+                        </label>
+                      ))}
+                      <button
+                        type="button"
+                        className="dashboard-action-button"
+                        onClick={() =>
+                          setTableFilters((current) => ({
+                            ...current,
+                            [activeDashboardView]: {},
+                          }))
+                        }
+                        aria-label="Clear filters"
+                        title="Clear filters"
+                        style={{
+                          border: "1px solid #d8dfe7",
+                          background: "#fff",
+                          padding: "8px 10px",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <i
+                          className="fa-solid fa-filter-circle-xmark"
+                          aria-hidden="true"
+                        ></i>{" "}
+                        <span>Clear</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="dashboard-table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        <th
+                          style={{
+                            width: "48px",
+                            textAlign: "center",
+                            padding: "14px 8px",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label="Select all"
+                            onChange={(e) => {
+                              if (!filteredDashboardRows) return;
+                              if (e.target.checked)
+                                setSelectedRowIds(
+                                  filteredDashboardRows.map((r) => r.id),
+                                );
+                              else clearSelection();
+                            }}
+                            checked={
+                              selectedRowIds.length ===
+                                filteredDashboardRows.length &&
+                              filteredDashboardRows.length > 0
+                            }
+                          />
+                        </th>
+                        {dashboardTableColumns[activeDashboardView]?.map(
+                          (column) => (
+                            <th
+                              key={column}
+                              style={{
+                                textAlign: "left",
+                                padding: "14px 16px",
+                                color: "#374151",
+                                fontSize: "0.95rem",
+                                fontWeight: 700,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {column}
+                            </th>
+                          ),
+                        )}
+                        <th
+                          style={{
+                            textAlign: "right",
+                            padding: "14px 16px",
+                            color: "#374151",
+                            fontSize: "0.95rem",
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredDashboardRows.length > 0 ? (
+                        paginatedDashboardRows.map((row) => (
+                          <tr
+                            key={row.id}
+                            style={{ borderTop: "1px solid #eef2f7" }}
+                          >
+                            <td
+                              style={{
+                                padding: "14px 8px",
+                                textAlign: "center",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedRowIds.includes(row.id)}
+                                onChange={() => toggleSelectRow(row.id)}
+                              />
+                            </td>
+                            {row.columns.map((cell, index) => (
+                              <td
+                                key={`${row.id}-${index}`}
+                                style={{
+                                  padding: index === 0 ? 0 : "14px 16px",
+                                  color: "#4b5563",
+                                  verticalAlign: "top",
+                                  maxWidth: "260px",
+                                  whiteSpace: "normal",
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {index === 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => viewRow(row)}
+                                    style={{
+                                      display: "block",
+                                      width: "100%",
+                                      minHeight: "52px",
+                                      padding: "14px 16px",
+                                      border: 0,
+                                      background: "transparent",
+                                      color: "#14532d",
+                                      fontWeight: 800,
+                                      textAlign: "left",
+                                      textDecoration: "none",
+                                      cursor: "pointer",
+                                    }}
+                                    aria-label={`View details for ${cell}`}
+                                  >
+                                    {cell}
+                                  </button>
+                                ) : (
+                                  cell
+                                )}
+                              </td>
+                            ))}
+                            <td
+                              style={{
+                                padding: "14px 16px",
+                                textAlign: "right",
+                                verticalAlign: "middle",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "flex-end",
+                                  gap: "0.5rem",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => viewRow(row)}
+                                  style={{
+                                    border: "1px solid #d5e8ff",
+                                    background: "#edf6ff",
+                                    color: "#14532d",
+                                    borderRadius: "999px",
+                                    padding: "0.55rem 0.9rem",
+                                    fontSize: "0.8rem",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteRow(row.id)}
+                                  style={{
+                                    border: "1px solid #fecaca",
+                                    background: "#fff1f2",
+                                    color: "#991b1b",
+                                    borderRadius: "999px",
+                                    padding: "0.55rem 0.9rem",
+                                    fontSize: "0.8rem",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {activeDashboardView === "slider"
+                                    ? "Unpost"
+                                    : "Delete"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td
+                            colSpan={
+                              (dashboardTableColumns[activeDashboardView]
+                                ?.length || 1) + 2
+                            }
+                            style={{
+                              padding: "18px 16px",
+                              color: "#6b7280",
+                              textAlign: "center",
+                            }}
+                          >
+                            No records available yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredDashboardRows.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "14px 4px", flexWrap: "wrap" }}>
+                    <span style={{ color: "#4b5563", fontSize: "0.9rem" }}>
+                      Showing {pageRangeStart}-{pageRangeEnd} of {filteredDashboardRows.length} records
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setDashboardTablePage((page) => Math.max(1, page - 1))}
+                        disabled={activeDashboardPage <= 1}
+                        aria-label="Previous records page"
+                      >
+                        Previous
+                      </button>
+                      <span aria-live="polite">Page {activeDashboardPage} of {dashboardPageCount}</span>
+                      <button
+                        type="button"
+                        onClick={() => setDashboardTablePage((page) => Math.min(dashboardPageCount, page + 1))}
+                        disabled={activeDashboardPage >= dashboardPageCount}
+                        aria-label="Next records page"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {proofPreviewModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setProofPreviewModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 22000,
+            background: "rgba(15, 23, 42, 0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              position: "relative",
+              width: "min(900px, calc(100vw - 36px))",
+              maxHeight: "88vh",
+              background: "#fff",
+              borderRadius: "18px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 26px 80px rgba(15, 23, 42, 0.32)",
+              overflow: "hidden",
+            }}
+          >
+            <button
+              type="button"
+              aria-label="Close proof preview"
+              onClick={() => setProofPreviewModal(null)}
+              style={{
+                position: "absolute",
+                top: "14px",
+                right: "14px",
+                width: "36px",
+                height: "36px",
+                borderRadius: "50%",
+                border: "1px solid #e2e8f0",
+                background: "#fff",
+                color: "#334155",
+                fontSize: "1.4rem",
+                cursor: "pointer",
+                zIndex: 2,
+              }}
+            >
+              ×
+            </button>
+            <img
+              src={proofPreviewModal}
+              alt="Payment proof preview"
+              style={{
+                display: "block",
+                width: "100%",
+                maxHeight: "88vh",
+                objectFit: "contain",
+                background: "#f8fafc",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {adminToast && (
+        <div
+          className="admin-toast"
+          data-type={adminToast.type}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="admin-toast-header">
+            <div className="admin-toast-content">
+              <i
+                className={`admin-toast-icon fa-solid ${adminToast.type === "success" ? "fa-circle-check" : adminToast.type === "warning" ? "fa-triangle-exclamation" : "fa-circle-exclamation"}`}
+                aria-hidden="true"
+              ></i>
+              <div>
+                <p className="admin-toast-title">{adminToast.title}</p>
+                <div className="admin-toast-body">{adminToast.message}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="admin-toast-close"
+              onClick={() => setAdminToast(null)}
+              aria-label="Close notification"
+            >
+              ×
+            </button>
+          </div>
+          {adminToast.actions.length > 0 && (
+            <div className="admin-toast-actions">
+              {adminToast.actions.map((action, index) => (
+                <button
+                  key={`${action.label}-${index}`}
+                  type="button"
+                  className={`admin-toast-btn ${action.variant === "danger" ? "danger" : "secondary"}`}
+                  onClick={action.onClick}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {deleteConfirmation && (
+        <div
+          className="delete-confirmation-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget)
+              setDeleteConfirmation(null);
+          }}
+        >
+          <section
+            className="delete-confirmation-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-confirmation-title"
+          >
+            <h3 id="delete-confirmation-title">Are you sure?</h3>
+            <p>{deleteConfirmation.message} This action cannot be undone.</p>
+            <div className="delete-confirmation-actions">
+              <button
+                type="button"
+                className="delete-confirmation-cancel"
+                onClick={() => setDeleteConfirmation(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="delete-confirmation-delete"
+                onClick={confirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {selectedOrder && (
+        <div
+          className="view-modal-overlay"
+          onClick={() => setSelectedOrder(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 17000,
+            padding: "20px",
+          }}
+        >
+          <div
+            className="view-modal-content"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: "18px",
+              width: "min(760px, calc(100vw - 32px))",
+              maxWidth: "100%",
+              maxHeight: "88vh",
+              overflowY: "auto",
+              boxShadow: "0 28px 90px rgba(15,23,42,0.35)",
+              border: "1px solid #e2e8f0",
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ padding: "22px 22px 0" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: "16px",
+                  marginBottom: "18px",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "#f59e0b",
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Order review
+                  </p>
+                  <h3
+                    style={{
+                      margin: "8px 0 0",
+                      fontSize: "1.7rem",
+                      fontWeight: 800,
+                      color: "#111827",
+                    }}
+                  >
+                    {selectedOrder.orderNumber || "Order details"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  aria-label="Close order review"
+                  style={{
+                    border: "none",
+                    background: "#f1f5f9",
+                    color: "#334155",
+                    borderRadius: "10px",
+                    width: "36px",
+                    height: "36px",
+                    cursor: "pointer",
+                    fontSize: "1.5rem",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "12px",
+                  marginBottom: "22px",
+                }}
+              >
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: "0.72rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Customer
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontWeight: 735,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {selectedOrder.name || "Customer"}
+                  </div>
+                  <div style={{ color: "#475569", fontSize: "0.9rem" }}>
+                    {selectedOrder.email || "No email"}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: "0.72rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Payment
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {selectedOrder.status === "paid"
+                      ? "Confirmed"
+                      : "Pending confirmation"}
+                  </div>
+                  <div style={{ color: "#475569", fontSize: "0.9rem" }}>
+                    {selectedOrder.paymentProofFile
+                      ? selectedOrder.paymentProofFile
+                      : "No proof uploaded"}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "12px",
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: "0.72rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Amount
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontWeight: 800,
+                      color: "#0f172a",
+                    }}
+                  >
+                    {new Intl.NumberFormat("en-NG", {
+                      style: "currency",
+                      currency: "NGN",
+                      maximumFractionDigits: 0,
+                    }).format(Number(selectedOrder.total || 0))}
+                  </div>
+                  <div style={{ color: "#475569", fontSize: "0.9rem" }}>
+                    {selectedOrder.createdAt
+                      ? new Date(selectedOrder.createdAt).toLocaleDateString()
+                      : "N/A"}
+                  </div>
+                </div>
+              </div>
+
+              <form
+                onSubmit={saveShopOrderTracking}
+                style={{ display: "grid", gap: "12px", marginBottom: "20px", padding: "18px", border: "1px solid #dbe7df", borderRadius: "14px", background: "#f7fbf8" }}
+              >
+                <div>
+                  <h4 style={{ margin: 0, color: "#166534" }}>Shipment tracking</h4>
+                  <p style={{ margin: "5px 0 0", color: "#64748b", fontSize: ".88rem" }}>
+                    Staff updates appear in the customer order timeline. Live rider location will be added with the rider app.
+                  </p>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px" }}>
+                  <label style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".82rem", fontWeight: 750 }}>
+                    Shipping stage
+                    <select value={trackingDraft.tracking_status} onChange={(event) => setTrackingDraft((draft) => ({ ...draft, tracking_status: event.target.value }))} style={{ minHeight: "42px", padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", color: "#0f172a" }}>
+                      {[["order_placed", "Order placed"], ["processing", "Processing"], ["dispatched", "Dispatched"], ["out_for_delivery", "Out for delivery"], ["delivered", "Delivered"], ["cancelled", "Cancelled"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".82rem", fontWeight: 750 }}>
+                    Tracking number (optional)
+                    <input value={trackingDraft.tracking_number} onChange={(event) => setTrackingDraft((draft) => ({ ...draft, tracking_number: event.target.value }))} maxLength={120} style={{ minHeight: "42px", padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "8px" }} />
+                  </label>
+                  <label style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".82rem", fontWeight: 750 }}>
+                    Estimated delivery
+                    <input type="datetime-local" value={trackingDraft.estimated_delivery_at} onChange={(event) => setTrackingDraft((draft) => ({ ...draft, estimated_delivery_at: event.target.value }))} style={{ minHeight: "42px", padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "8px" }} />
+                  </label>
+                </div>
+                <label style={{ display: "grid", gap: "5px", color: "#334155", fontSize: ".82rem", fontWeight: 750 }}>
+                  Update note for the customer (optional)
+                  <input value={trackingDraft.note} onChange={(event) => setTrackingDraft((draft) => ({ ...draft, note: event.target.value }))} maxLength={500} placeholder="e.g. Package handed to the delivery partner" style={{ minHeight: "42px", padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "8px" }} />
+                </label>
+                {trackingSaveError ? <p role="alert" style={{ margin: 0, color: "#b91c1c", fontWeight: 700 }}>{trackingSaveError}</p> : null}
+                {trackingSaveNotice ? <p role="status" style={{ margin: 0, color: "#166534", fontWeight: 700 }}>{trackingSaveNotice}</p> : null}
+                <button type="submit" disabled={trackingSaveBusy} style={{ justifySelf: "start", minHeight: "42px", padding: "0 16px", border: 0, borderRadius: "9px", background: trackingSaveBusy ? "#94a3b8" : "#166534", color: "#fff", fontWeight: 800, cursor: trackingSaveBusy ? "wait" : "pointer" }}>
+                  {trackingSaveBusy ? "Saving tracking…" : "Save shipment update"}
+                </button>
+              </form>
+
+              <div
+                className="order-review-columns"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.2fr 0.8fr",
+                  gap: "18px",
+                  alignItems: "start",
+                }}
+              >
+                <section
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <h4
+                    style={{
+                      margin: "0 0 12px",
+                      color: "#111827",
+                      fontSize: "1rem",
+                    }}
+                  >
+                    Items
+                  </h4>
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {(selectedOrder.items || []).length > 0 ? (
+                      (selectedOrder.items || []).map((item, index) => (
+                        <div
+                          key={`${item.id || item.title || index}`}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                            alignItems: "center",
+                            borderBottom:
+                              index < (selectedOrder.items || []).length - 1
+                                ? "1px solid #e2e8f0"
+                                : "none",
+                            paddingBottom:
+                              index < (selectedOrder.items || []).length - 1
+                                ? "10px"
+                                : 0,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                              {item.title || "Product"}
+                            </div>
+                            <div
+                              style={{ fontSize: "0.8rem", color: "#64748b" }}
+                            >
+                              Qty: {item.quantity || 1}
+                            </div>
+                          </div>
+                          <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                            {new Intl.NumberFormat("en-NG", {
+                              style: "currency",
+                              currency: "NGN",
+                              maximumFractionDigits: 0,
+                            }).format(
+                              Number(item.price || 0) *
+                                Number(item.quantity || 1),
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: "#64748b" }}>
+                        No items recorded for this order.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section
+                  style={{
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <h4
+                    style={{
+                      margin: "0 0 12px",
+                      color: "#111827",
+                      fontSize: "1rem",
+                    }}
+                  >
+                    Proof of payment
+                  </h4>
+                  {paymentProofPreview ? (
+                    <>
+                      <img
+                        src={paymentProofPreview}
+                        alt="Payment proof preview"
+                        style={{
+                          width: "100%",
+                          borderRadius: "10px",
+                          border: "1px solid #cbd5e1",
+                          maxHeight: "220px",
+                          objectFit: "cover",
+                        }}
+                      />
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          display: "flex",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setProofPreviewModal(paymentProofPreview)
+                          }
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            background: "#111827",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "10px",
+                            padding: "8px 12px",
+                            fontWeight: 700,
+                            fontSize: "0.8rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <i
+                            className="fa-solid fa-expand"
+                            aria-hidden="true"
+                          ></i>
+                          View image
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        color: "#64748b",
+                        padding: "20px 0",
+                        textAlign: "center",
+                      }}
+                    >
+                      No proof image attached.
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              {/*
+                <div style={{ display: 'grid', gap: '12px', marginTop: '8px' }}>
+                  <section style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px' }}>
+                    <h4 style={{ margin: '0 0 12px', color: '#111827', fontSize: '1rem' }}>Proof of payment</h4>
+                    {paymentProofPreview ? (
+                      <>
+                        <img src={paymentProofPreview} alt="Payment proof preview" style={{ width: '100%', borderRadius: '10px', border: '1px solid #cbd5e1', maxHeight: '220px', objectFit: 'cover' }} />
+                        <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            onClick={() => setProofPreviewModal(paymentProofPreview)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              background: '#111827',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '10px',
+                              padding: '8px 12px',
+                              fontWeight: 700,
+                              fontSize: '0.8rem',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <i className="fa-solid fa-expand" aria-hidden="true"></i>
+                            View image
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ color: '#64748b', padding: '20px 0', textAlign: 'center' }}>No proof image attached.</div>
+                    )}
+                  </section>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '16px', padding: '10px 18px', boxShadow: '0 8px 20px rgba(0,0,0,0.12)' }}>
+                        <img src="/logo/logo2.jpeg" alt="PAZ logo" style={{ width: '38px', height: '38px', borderRadius: '12px', marginRight: '12px', objectFit: 'cover' }} />
+                        <div style={{ fontSize: '11px', letterSpacing: '0.12em', fontWeight: 800, textTransform: 'uppercase', lineHeight: 1.2, textAlign: 'left', color: '#0f172a' }}>
+                          PAZ<br />Thriving Tribe
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px 16px 12px', background: '#fff' }}>
+                      <div style={{ fontSize: '0.7rem', color: '#2d7a5c', letterSpacing: '0.08em', fontWeight: 800, textTransform: 'uppercase', marginBottom: '10px' }}>
+                        Subject: {selectedOrder.orderNumber ? `Your PAZ order is ready — #${selectedOrder.orderNumber}` : 'Your PAZ order update'}
+                      </div>
+
+                      <div style={{ fontWeight: 800, color: '#111827', marginBottom: '10px', fontSize: '1.05rem' }}>
+                        Hi {selectedOrder.name || selectedOrder.customerName || selectedOrder.customer_name || selectedOrder.full_name || 'there'},
+                      </div>
+
+                      <div style={{ color: '#334155', lineHeight: 1.7, whiteSpace: 'pre-wrap', fontSize: '0.93rem', marginBottom: '14px' }}>
+                        {deliveryMessageDraft || 'Your purchased product is now ready for delivery.'}
+                      </div>
+
+                      <div style={{ background: '#f3f9f6', border: '1px solid #d7e9e0', borderRadius: '12px', padding: '14px', marginBottom: '14px' }}>
+                        <div style={{ fontSize: '0.68rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2d7a5c', fontWeight: 800, marginBottom: '8px' }}>
+                          Order details
+                        </div>
+                        {selectedOrder.orderNumber && (
+                          <div style={{ color: '#1f2937', fontSize: '0.9rem', marginBottom: '6px' }}>
+                            <strong>Order number:</strong> {selectedOrder.orderNumber}
+                          </div>
+                        )}
+                        {deliveryAttachment && (
+                          <div style={{ color: '#1f2937', fontSize: '0.9rem', marginBottom: '6px' }}>
+                            <strong>Product file:</strong> {deliveryAttachment.name}
+                          </div>
+                        )}
+                        <div style={{ color: '#1f2937', fontSize: '0.9rem' }}>
+                          <strong>Customer email:</strong> {selectedOrder.email || 'No email'}
+                        </div>
+                      </div>
+
+                      {(selectedOrder.items || []).length > 0 && (
+                        <div style={{ background: '#f8faf7', border: '1px solid #dfeae2', borderRadius: '12px', padding: '14px', marginBottom: '14px' }}>
+                          <div style={{ fontSize: '0.68rem', color: '#2d7a5c', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, marginBottom: '10px' }}>Your materials</div>
+                          {(selectedOrder.items || []).map((item, index) => (
+                            <div key={`${item.id || item.title || index}`} style={{ color: '#334155', fontSize: '0.9rem', marginBottom: '6px' }}>
+                              • {item.title || 'Product'} x{item.quantity || 1}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '14px' }}>
+                        <a href="https://pazthrivingtribe.org/teens_reg" style={{ display: 'inline-block', background: '#1d9a63', color: '#fff', padding: '12px 18px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'none' }}>Apply for a session</a>
+                        <a href="https://pazthrivingtribe.org/book-session" style={{ display: 'inline-block', background: '#fff', color: '#0f172a', border: '1px solid #dfe8e3', padding: '12px 18px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 800, textDecoration: 'none' }}>Book for a session</a>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#f7faf8', borderTop: '1px solid #dfe8e3', padding: '18px 16px 20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a', marginBottom: '8px' }}>Stay connected with PAZ</div>
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                        <a href="https://www.instagram.com/pazthrivingtribe" target="_blank" rel="noreferrer" style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#e1306c', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Instagram">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="5" stroke="white" strokeWidth="2"/><circle cx="12" cy="12" r="4.2" stroke="white" strokeWidth="2"/><circle cx="17.3" cy="6.7" r="1.3" fill="white"/></svg>
+                        </a>
+                        <a href="https://facebook.com/pazthrivingtribe" target="_blank" rel="noreferrer" style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#1877f2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Facebook">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 8.5H16V5.5C15.5 5.4 14.7 5.3 13.8 5.3C11.7 5.3 10.3 6.5 10.3 9V11H7.7V14.2H10.3V19H13.5V14.2H15.7L16 11H13.5V9.4C13.5 8.9 13.9 8.5 14.5 8.5Z" fill="white"/></svg>
+                        </a>
+                        <a href="https://wa.me/2348037383820" target="_blank" rel="noreferrer" style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#25D366', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="WhatsApp">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.52 3.48A11.83 11.83 0 0 0 12.08 1C6.26 1 1.53 5.72 1.53 11.52c0 2.05.54 4.05 1.57 5.82L1.5 22.5l5.3-1.38A10.5 10.5 0 0 0 12.08 21c5.82 0 10.55-4.72 10.55-10.52 0-2.82-1.1-5.48-3.11-7.5ZM12.08 18.98c-1.7 0-3.36-.45-4.82-1.31l-.34-.2-3.14.82.84-3.06-.2-.33A8.5 8.5 0 1 1 20.57 11.5c0 2.28-.88 4.42-2.49 6.06a8.4 8.4 0 0 1-6.0 1.42Zm4.63-6.25c-.25-.13-1.47-.72-1.7-.8-.23-.08-.4-.13-.57.12-.17.25-.64.8-.78.95-.14.16-.29.18-.54.06-.25-.13-1.04-.38-1.98-1.22-.73-.65-1.23-1.45-1.37-1.7-.14-.25-.02-.39.11-.52.11-.11.25-.29.38-.43.12-.14.16-.25.25-.42.08-.17.04-.31-.02-.43-.06-.12-.57-1.37-.78-1.88-.2-.5-.41-.43-.57-.43h-.48c-.16 0-.42.06-.64.31-.22.25-.86.84-.86 2.05 0 1.21.88 2.38.99 2.55.12.17 1.72 2.73 4.15 3.82.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.47-.6 1.67-1.18.2-.58.2-1.07.14-1.18-.06-.12-.22-.18-.47-.31Z" fill="white"/></svg>
+                        </a>
+                        <a href="https://www.linkedin.com/company/pazthrivingtribe" target="_blank" rel="noreferrer" style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#0a66c2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} aria-label="LinkedIn">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.94 8.5C7.95 8.5 8.76 7.7 8.76 6.75C8.76 5.79 7.95 5 6.94 5C5.94 5 5.13 5.79 5.13 6.75C5.13 7.7 5.94 8.5 6.94 8.5ZM5.48 9.8H8.4V18.5H5.48V9.8ZM10.7 9.8H13.55V11H13.59C14.03 10.2 15.08 9.33 16.8 9.33C20.3 9.33 20.8 11.7 20.8 14.3V18.5H17.88V15C17.88 13.8 17.86 12.2 16.17 12.2C14.44 12.2 14.17 13.55 14.17 14.88V18.5H10.7V9.8Z" fill="white"/></svg>
+                        </a>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                        <a href="https://pazthrivingtribe.org" style={{ display: 'inline-block', background: '#0f172a', color: '#fff', padding: '10px 14px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 800, textDecoration: 'none' }}>PAZ website</a>
+                        <a href="https://wa.me/2348037383820" style={{ display: 'inline-block', background: '#e8f6ef', color: '#0d5d46', border: '1px solid #cfeadf', padding: '10px 14px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 800, textDecoration: 'none' }}>WhatsApp</a>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>© {new Date().getFullYear()} PAZ Thriving Tribe. All rights reserved.</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>Email: pazthrivingtribe@gmail.com | WhatsApp: +234 803 738 3820</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '18px' }}>
+                    <button type="button" onClick={() => handleSendProductEmail(selectedOrder)} style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '0.85rem 1.2rem', fontWeight: 800, cursor: 'pointer' }}>
+                      {selectedOrder.productEmailSent ? 'Resend email' : 'Send product'}
+                    </button>
+                  </div>
+                </div>
+              */}
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: "12px",
+                  flexWrap: "wrap",
+                  marginTop: "22px",
+                  paddingBottom: "22px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  style={{
+                    background: "#f8fafc",
+                    color: "#334155",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "10px",
+                    padding: "0.9rem 1.35rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Viewing Modal */}
+      {viewingRow && (
+        <div
+          className="view-modal-overlay"
+          onClick={() => setViewingRow(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 16000,
+            padding: "20px",
+          }}
+        >
+          <div
+            className={`view-modal-content printable-response-card ${["testimonials", "slider"].includes(activeDashboardView) ? "testimonial-view-modal" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#f5f8fa",
+              borderRadius: "4px",
+              padding: 0,
+              maxWidth: "760px",
+              width: "100%",
+              maxHeight: "88vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.42)",
+            }}
+          >
+            <div
+              className="response-letterhead"
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "20px",
+                margin: 0,
+                background: "#164568",
+                color: "#fff",
+                padding: "0.9rem 1.25rem",
+              }}
+            >
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "0.8rem" }}
+              >
+                <img
+                  src="/logo/logomain.png"
+                  alt="Paz Thriving Tribe logo"
+                  style={{
+                    width: "46px",
+                    height: "46px",
+                    objectFit: "contain",
+                    background: "#fff",
+                    borderRadius: "50%",
+                    padding: "3px",
+                  }}
+                />
+                <div>
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "#fff",
+                      fontSize: "0.66rem",
+                      fontWeight: 800,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    PAZ THRIVING TRIBE
+                  </p>
+                  <h3
+                    style={{
+                      margin: "5px 0 0",
+                      fontSize: "1.25rem",
+                      fontWeight: 800,
+                      color: "#fff",
+                    }}
+                  >
+                    {["testimonials", "slider"].includes(activeDashboardView)
+                      ? "Testimonial Preview"
+                      : "Parent Mentoring Feedback Form"}
+                  </h3>
+                </div>
+              </div>
+              <div
+                style={{ display: "flex", gap: "8px", alignItems: "center" }}
+              >
+                <button
+                  type="button"
+                  onClick={printViewingRow}
+                  style={{
+                    border: "1px solid rgba(255,255,255,.35)",
+                    background: "#fff",
+                    color: "#164568",
+                    borderRadius: "3px",
+                    padding: "0.5rem 0.75rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  <i className="fa-solid fa-print" aria-hidden="true" /> Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingRow(null)}
+                  aria-label="Close record details"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    fontSize: "1.5rem",
+                    cursor: "pointer",
+                    color: "#fff",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div
+              className="response-letterhead-meta"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 0,
+                margin: "1rem 1.25rem 0",
+                color: "#164568",
+                fontSize: "0.68rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+              }}
+            >
+              <span style={{ background: "#e8f0f5", padding: "0.65rem" }}>
+                Response ID
+                <br />
+                <strong style={{ fontSize: "0.8rem" }}>
+                  {formatReferenceId(viewingRow.id)}
+                </strong>
+              </span>
+              <span style={{ background: "#fff4d5", padding: "0.65rem" }}>
+                Prepared
+                <br />
+                <strong style={{ fontSize: "0.8rem" }}>
+                  {new Date().toLocaleDateString()}
+                </strong>
+              </span>
+            </div>
+            <div
+              className="response-details-grid"
+              style={{
+                display: "grid",
+                gap: 0,
+                padding: "1rem 1.25rem 1.25rem",
+              }}
+            >
+              {Object.entries(viewingRow)
+                .filter(
+                  ([key]) =>
+                    !(
+                      key.toLowerCase() === "id" &&
+                      ["testimonials", "slider"].includes(activeDashboardView)
+                    ),
+                )
+                .map(([key, value]) => {
+                  let displayValue = value;
+                  if (Array.isArray(value)) {
+                    displayValue =
+                      value.length > 0 ? value.join(", ") : "None selected";
+                  } else if (typeof value === "object" && value !== null) {
+                    try {
+                      displayValue = JSON.stringify(value, null, 2);
+                    } catch (e) {
+                      displayValue = String(value);
+                    }
+                  }
+                  if (
+                    /name|parent|child/i.test(key) &&
+                    typeof displayValue === "string"
+                  )
+                    displayValue = formatName(displayValue);
+                  return (
+                    <div
+                      className="response-detail-row"
+                      key={key}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "180px 1fr",
+                        gap: "1rem",
+                        alignItems: "stretch",
+                        border: "1px solid #d7e1e7",
+                        borderBottom: 0,
+                        background: "#fff",
+                      }}
+                    >
+                      <label
+                        className="response-detail-label"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          margin: 0,
+                          padding: "0.7rem 0.8rem",
+                          fontSize: "0.72rem",
+                          fontWeight: 800,
+                          color: "#164568",
+                          background: "#e8f0f5",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {key.replace(/_/g, " ")}
+                      </label>
+                      <div
+                        style={{
+                          padding: "0.7rem 0.8rem",
+                          fontSize: "0.9rem",
+                          color: "#1f2937",
+                          wordBreak: "break-word",
+                          whiteSpace: "pre-wrap",
+                          fontFamily:
+                            typeof displayValue === "string" &&
+                            displayValue.includes("{")
+                              ? "monospace"
+                              : "inherit",
+                        }}
+                      >
+                        {displayValue || "—"}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+            <div
+              className="testimonial-modal-actions"
+              style={{
+                display: "flex",
+                gap: "1rem",
+                marginTop: "2rem",
+                justifyContent: "flex-end",
+                borderTop: "1px solid #e5e7eb",
+                paddingTop: "1rem",
+              }}
+            >
+              {["testimonials", "slider"].includes(activeDashboardView) &&
+                viewingRow.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rowId = viewingRow.id;
+                      setViewingRow(null);
+                      deleteRow(rowId);
+                    }}
+                    title="Remove this testimonial from the home page slider"
+                    aria-label="Remove this testimonial from the home page slider"
+                    style={{
+                      marginLeft: "auto",
+                      background: "#fff1f2",
+                      color: "#991b1b",
+                      border: "1px solid #fecaca",
+                      padding: "0.75rem 1.5rem",
+                      borderRadius: "8px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Unpost testimonial
+                  </button>
+                )}
+              {["testimonials", "feedback"].includes(activeDashboardView) &&
+                (viewingRow.Testimonial ||
+                  viewingRow.testimonial ||
+                  viewingRow.text) && (
+                  <button
+                    type="button"
+                    onClick={openTestimonialConfirmation}
+                    disabled={postingToSlider}
+                    title="Publish this testimonial to the home page testimonial slider"
+                    aria-label="Publish this testimonial to the home page testimonial slider"
+                    data-tooltip="Posts only this testimonial to the Testimonial section on the home page."
+                    style={{
+                      background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                      color: "#fff",
+                      border: "none",
+                      padding: "0.75rem 1.5rem",
+                      borderRadius: "8px",
+                      fontWeight: 700,
+                      cursor: postingToSlider ? "not-allowed" : "pointer",
+                      opacity: postingToSlider ? 0.7 : 1,
+                    }}
+                  >
+                    {postingToSlider ? "Posting..." : "Post testimonial"}
+                  </button>
+                )}
+              <button
+                type="button"
+                onClick={() => setViewingRow(null)}
+                style={{
+                  background: "#f0f1f2",
+                  color: "#1f2937",
+                  border: "1px solid #d8dfe7",
+                  padding: "0.75rem 1.5rem",
+                  borderRadius: "8px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {testimonialConfirmation && (
+        <div
+          className="testimonial-confirmation-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget)
+              setTestimonialConfirmation(null);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.58)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 17000,
+            padding: "20px",
+          }}
+        >
+          <section
+            className="testimonial-confirmation-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="testimonial-confirmation-title"
+            style={{
+              width: "min(560px, 100%)",
+              background: "#fff",
+              borderRadius: "18px",
+              padding: "28px",
+              boxShadow: "0 28px 80px rgba(15,23,42,.32)",
+              border: "1px solid #dbe7df",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: "1rem",
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#1e7d5b",
+                    fontSize: "0.72rem",
+                    fontWeight: 800,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Review before publishing
+                </p>
+                <h3
+                  id="testimonial-confirmation-title"
+                  style={{
+                    margin: "0.45rem 0 0",
+                    color: "#17212b",
+                    fontSize: "1.45rem",
+                  }}
+                >
+                  Are you sure you want to post this?
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTestimonialConfirmation(null)}
+                aria-label="Close testimonial preview"
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "#64748b",
+                  fontSize: "1.5rem",
+                  lineHeight: 1,
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div className="testimonial-confirmation-preview">
+              <p
+                style={{
+                  margin: "0.85rem 0 1.25rem",
+                  color: "#64748b",
+                  lineHeight: 1.5,
+                }}
+              >
+                This content will appear in the Client Voices testimonial slider
+                on the home page.
+              </p>
+              <div
+                className="testimonial-confirmation-quote"
+                style={{
+                  background: "linear-gradient(135deg, #f0f8f3, #fff8f3)",
+                  border: "1px solid #dbe7df",
+                  borderRadius: "12px",
+                  padding: "1.2rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "1rem",
+                    alignItems: "flex-start",
+                    marginBottom: "0.9rem",
+                  }}
+                >
+                  <div>
+                    <p style={{ margin: 0, color: "#17212b", fontWeight: 800 }}>
+                      {testimonialConfirmation.title}
+                    </p>
+                    <p
+                      style={{
+                        margin: "0.25rem 0 0",
+                        color: "#1e7d5b",
+                        fontSize: "0.8rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {testimonialConfirmation.origin}
+                    </p>
+                  </div>
+                  <i
+                    className="fa-solid fa-quote-left"
+                    aria-hidden="true"
+                    style={{ color: "#e88767", fontSize: "1.15rem" }}
+                  />
+                </div>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#334155",
+                    fontSize: "1.05rem",
+                    lineHeight: 1.65,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  “{testimonialConfirmation.text}”
+                </p>
+              </div>
+            </div>
+            <div
+              className="testimonial-confirmation-actions"
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.75rem",
+                marginTop: "1.5rem",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setTestimonialConfirmation(null)}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  background: "#f8fafc",
+                  color: "#334155",
+                  borderRadius: "8px",
+                  padding: "0.75rem 1.2rem",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={postTestimonialToSlider}
+                disabled={postingToSlider}
+                style={{
+                  border: 0,
+                  background: "linear-gradient(135deg, #1e7d5b, #22a06b)",
+                  color: "#fff",
+                  borderRadius: "8px",
+                  padding: "0.75rem 1.35rem",
+                  fontWeight: 800,
+                  cursor: postingToSlider ? "not-allowed" : "pointer",
+                  opacity: postingToSlider ? 0.7 : 1,
+                }}
+              >
+                {postingToSlider ? "Posting..." : "Post to slider"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}

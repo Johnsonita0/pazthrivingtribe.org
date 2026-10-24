@@ -2,63 +2,54 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/pazz-thriving-tribe/public/logo/logomain.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PTT</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/png" sizes="512x512" href="/paz-world/paz-world-pazz-logo-512-v3.png" />
+    <link rel="apple-touch-icon" href="/paz-world/paz-world-pazz-logo-192-v3.png" />
+    <link rel="manifest" href="/paz-world/manifest.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="description" content="Personal growth, coaching and mentoring for women, teens and families in Nigeria. Find caring guidance, youth development programs and practical support." />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#061947" />
+    <link rel="canonical" href="https://pazthrivingtribe.org/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PAZ Thriving Tribe" />
+    <meta property="og:title" content="PAZ Thriving Tribe | Coaching &amp; Mentoring in Nigeria" />
+    <meta property="og:description" content="Personal growth, coaching and mentoring for women, teens and families in Nigeria. Find caring guidance, youth development programs and practical support." />
+    <meta property="og:url" content="https://pazthrivingtribe.org/" />
+    <meta property="og:image" content="https://pazthrivingtribe.org/logo/logomain.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="PAZ Thriving Tribe | Coaching &amp; Mentoring in Nigeria" />
+    <meta name="twitter:description" content="Personal growth, coaching and mentoring for women, teens and families in Nigeria. Find caring guidance, youth development programs and practical support." />
+    <meta name="twitter:image" content="https://pazthrivingtribe.org/logo/logomain.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://pazthrivingtribe.org/#organization",
+            "name": "PAZ Thriving Tribe",
+            "url": "https://pazthrivingtribe.org/",
+            "logo": "https://pazthrivingtribe.org/logo/logomain.png",
+            "email": "pazthrivingtribe@gmail.com"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://pazthrivingtribe.org/#website",
+            "url": "https://pazthrivingtribe.org/",
+            "name": "PAZ Thriving Tribe",
+            "publisher": {
+              "@id": "https://pazthrivingtribe.org/#organization"
+            },
+            "inLanguage": "en"
+          }
+        ]
+      }
+    </script>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2401935501667401" crossorigin="anonymous"></script>
+    <title>PAZ Thriving Tribe | Coaching &amp; Mentoring in Nigeria</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
-  </script>
-  <!-- <script src="https://cdn.tailwindcss.com"></script> -->
-
-<script>
-  tailwind.config = {
-    darkMode: 'class',
-    theme: {
-      extend: {
-        colors: {
-          // Add explicit custom fallback variables if needed
-        }
-      }
-    }
-  }
-</script>
-<script>
-  (function() {
-    // Check local storage for an existing preference on page boot
-    var activePreference = localStorage.getItem('pazz_theme_preference') || 'light';
-    
-    window.switchClientTheme = function(chosenTheme) {
-      var rootElement = document.documentElement;
-      var bodyElement = document.body;
-      
-      localStorage.setItem('pazz_theme_preference', chosenTheme);
-
-      if (chosenTheme === 'dark') {
-        // ACTIVATE THE CLIENT'S NATIVE HOOKS
-        rootElement.classList.add('dark', 'dark-mode');
-        if (bodyElement) bodyElement.classList.add('dark', 'dark-mode');
-        
-        rootElement.setAttribute('data-theme', 'dark');
-        if (bodyElement) bodyElement.setAttribute('data-theme', 'dark');
-      } else {
-        // STRIP THEM AWAY TO RESTORE YOUR ORIGINAL LIGHT THEME
-        rootElement.classList.remove('dark', 'dark-mode');
-        if (bodyElement) bodyElement.classList.remove('dark', 'dark-mode');
-        
-        rootElement.removeAttribute('data-theme');
-        if (bodyElement) bodyElement.removeAttribute('data-theme');
-      }
-    };
-
-    // Run immediately when the script evaluates to avoid flashing layouts
-    window.switchClientTheme(activePreference);
-  })();
-</script>
   </body>
 </html>

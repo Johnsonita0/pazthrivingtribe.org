@@ -1,0 +1,25 @@
+{
+  "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://pazthrivingtribebackend.vercel.app/api/:path*"
+    },
+    {
+      "source": "/webhook",
+      "destination": "https://pazthrivingtribebackend.vercel.app/api/webhook"
+    },
+    { "source": "/((?!api(?:/|$)|webhook$).*)", "destination": "/index.html" }
+  ]
+}

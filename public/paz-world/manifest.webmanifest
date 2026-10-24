@@ -1,0 +1,26 @@
+{
+  "id": "/paz-world/",
+  "name": "PAZ World — Solution Chat",
+  "short_name": "PAZ World",
+  "description": "Faith-based encouragement and Bible study tools from PAZ Thriving Tribe.",
+  "start_url": "/paz-world/",
+  "scope": "/paz-world/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#061947",
+  "theme_color": "#061947",
+  "icons": [
+    {
+      "src": "/paz-world/paz-world-pazz-logo-192-v3.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/paz-world/paz-world-pazz-logo-512-v3.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
