@@ -1519,14 +1519,14 @@ export default function SolutionChatPage() {
     try {
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
-      const accessToken = data.session?.access_token;
+      let accessToken = data.session?.access_token;
       if (!accessToken) {
         setMentorNeedsSignIn(true);
         setStatusMessage('Sign in to PAZ World to chat with Mentor Charles. Your message has not been sent.');
         return;
       }
 
-      const response = await fetch('/api/mentor-chat', {
+      const sendMessage = (token) => fetch('/api/mentor-chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1537,11 +1537,23 @@ export default function SolutionChatPage() {
           history: mentorMessages.slice(-8)
         })
       });
+
+      let response = await sendMessage(accessToken);
+      if (response.status === 401) {
+        const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+        accessToken = refreshedData.session?.access_token;
+        if (refreshError || !accessToken) {
+          setMentorNeedsSignIn(true);
+          throw new Error('Your PAZ session needs to be refreshed. Sign in again to continue.');
+        }
+        response = await sendMessage(accessToken);
+      }
+
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 401) {
           setMentorNeedsSignIn(true);
-          throw new Error(payload.error || 'Sign in again to chat with Mentor Charles.');
+          throw new Error('Your account is signed in, but PAZ could not verify this session. Sign out and sign in again; if this continues, contact PAZ support.');
         }
         throw new Error(payload.error || 'Mentor Charles could not reply. Please try again.');
       }
