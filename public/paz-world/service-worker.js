@@ -1,10 +1,9 @@
-const CACHE_NAME = 'paz-world-v5';
+const CACHE_NAME = 'paz-world-v7';
 const APP_URL = '/paz-world/';
 const APP_SHELL = [
   APP_URL,
   '/paz-world/manifest.webmanifest',
-  '/paz-world/paz-world-pazz-logo-192-v3.png',
-  '/paz-world/paz-world-pazz-logo-512-v3.png',
+  '/paz-world/paz-world-logo.png',
   '/paz-world/bible-kjv.json'
 ];
 

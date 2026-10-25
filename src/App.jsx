@@ -48,7 +48,7 @@ const seoPages = {
   },
   '/paz-world': {
     title: 'PAZ World | Faith-Based Solution Chat',
-    description: 'Find a welcoming space for faith-based encouragement and Bible reflection with PAZ World.'
+    description: 'A welcoming, non-judgmental space for parents and caregivers to talk through raising pre-teens and teenagers and find practical support.'
   },
   '/care-counseling': {
     title: 'Care & Counselling in Nigeria | PAZ Thriving Tribe',

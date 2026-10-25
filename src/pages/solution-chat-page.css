@@ -3690,6 +3690,114 @@
   min-width: 112px;
 }
 
+.solution-chat-auth-backdrop {
+  z-index: 1400;
+}
+
+.solution-chat-auth-dialog {
+  display: grid;
+  width: min(440px, 100%);
+  max-height: min(92vh, 760px);
+  gap: 12px;
+  overflow-y: auto;
+  padding: 26px;
+  border: 1px solid #e0e9f4;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px #071d3a40;
+}
+
+.solution-chat-auth-dialog .solution-chat-install-icon {
+  margin: 0 auto;
+}
+
+.solution-chat-auth-dialog > .solution-chat-eyebrow,
+.solution-chat-auth-dialog h2,
+.solution-chat-auth-description {
+  margin: 0;
+  text-align: center;
+}
+
+.solution-chat-auth-dialog h2 {
+  color: #172d4e;
+  font-size: 21px;
+}
+
+.solution-chat-auth-description {
+  color: #71839a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.solution-chat-auth-form {
+  display: grid;
+  gap: 9px;
+}
+
+.solution-chat-auth-form label {
+  color: #354d6a;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.solution-chat-auth-form input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #d8e2ee;
+  border-radius: 9px;
+  color: #172d4e;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+
+.solution-chat-auth-form input:focus {
+  border-color: #3979d4;
+  outline: 3px solid #3979d422;
+}
+
+.solution-chat-auth-form .solution-chat-auth-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 3px 0;
+  color: #52657c;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.solution-chat-auth-form .solution-chat-auth-consent input {
+  width: 17px;
+  min-height: 17px;
+  flex: 0 0 17px;
+  margin: 1px 0 0;
+  accent-color: #176b3a;
+}
+
+.solution-chat-auth-form .solution-chat-primary-action {
+  width: 100%;
+  margin-top: 5px;
+}
+
+.solution-chat-auth-switch {
+  margin: 0;
+  color: #71839a;
+  font-size: 12px;
+  text-align: center;
+}
+
+.solution-chat-auth-switch button {
+  padding: 0;
+  border: 0;
+  color: #145fc9;
+  background: transparent;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 .solution-chat-dialog-close {
   position: absolute;
   top: 13px;

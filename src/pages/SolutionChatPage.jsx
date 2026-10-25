@@ -4,9 +4,9 @@ import { isSupabaseStub, supabase } from '../supabaseClient';
 import './solution-chat-page.css';
 
 const suggestedQuestions = [
-  'I feel anxious about the future',
-  'How can I forgive someone who hurt me?',
-  'I need strength during a difficult season'
+  'My teenager won’t talk to me. How can I reconnect?',
+  'We keep arguing about rules and boundaries. What can I try?',
+  'I’m worried about a mistake my teen made. How do I guide them without shaming them?'
 ];
 
 const bibleTranslations = [
@@ -54,7 +54,7 @@ const appSections = [
   { id: 'notes', label: 'My Note', icon: 'fa-bookmark' }
 ];
 const homeFeatures = [
-  { id: 'chat', title: 'AI Mentor Charles', description: 'Get thoughtful encouragement and Bible references for what is on your heart.', icon: 'fa-comments', tone: 'blue', chatTab: 'mentor' },
+  { id: 'chat', title: 'AI Mentor Charles', description: 'Find a calm, non-judgmental place to talk through parenting your pre-teen or teenager and explore practical next steps.', icon: 'fa-comments', tone: 'blue', chatTab: 'mentor' },
   { id: 'chat', title: 'Community Room', description: 'Find conversations around faith, encouragement, family and purpose.', icon: 'fa-people-group', tone: 'green', chatTab: 'community' },
   { id: 'coach', title: 'One on One Coach', description: 'Explore personal coaching and support for your goals and challenges.', icon: 'fa-user-group', tone: 'orange' },
   { id: 'bible', title: 'Bible', description: 'Read, reflect and grow with scripture and Bible study tools.', icon: 'fa-book-bible', tone: 'purple' },
@@ -531,6 +531,8 @@ async function createCroppedAvatar(source, zoom, positionX, positionY) {
 export default function SolutionChatPage() {
   const installPromptRef = useRef(null);
   const [showSplash, setShowSplash] = useState(true);
+  const [hasStartedWorld, setHasStartedWorld] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [isInstalled, setIsInstalled] = useState(isPwaInstalled);
   const [showInstallPrompt, setShowInstallPrompt] = useState(!isPwaInstalled());
@@ -569,6 +571,7 @@ export default function SolutionChatPage() {
   const [mentorIsSending, setMentorIsSending] = useState(false);
   const [mentorNeedsSignIn, setMentorNeedsSignIn] = useState(false);
   const [profileSession, setProfileSession] = useState(null);
+  const [profileSessionLoaded, setProfileSessionLoaded] = useState(false);
   const [customerProfile, setCustomerProfile] = useState(null);
   const [profileName, setProfileName] = useState('');
   const [profilePhone, setProfilePhone] = useState('');
@@ -581,6 +584,10 @@ export default function SolutionChatPage() {
   const [profileAvatarError, setProfileAvatarError] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [profilePassword, setProfilePassword] = useState('');
+  const [authModalMode, setAuthModalMode] = useState('signIn');
+  const [authModalName, setAuthModalName] = useState('');
+  const [authModalConfirmPassword, setAuthModalConfirmPassword] = useState('');
+  const [authModalConsent, setAuthModalConsent] = useState(false);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState('');
@@ -736,6 +743,7 @@ export default function SolutionChatPage() {
     minute: '2-digit'
   }).format(clockNow);
   const profileUser = profileSession?.user || null;
+  const authModalOpen = showAuthModal && profileSessionLoaded && !profileUser;
   const profileUserId = profileUser?.id;
   const bibleNotesStorageKey = `paz-world-bible-notes:v1:${profileUserId || 'guest'}`;
   const dailyNotificationRead = dailyNotificationStatus.dateKey === todayDateKey && dailyNotificationStatus.read;
@@ -749,6 +757,41 @@ export default function SolutionChatPage() {
     || customerProfile?.avatar_url
     || profileUser?.user_metadata?.avatar_url
     || profileUser?.user_metadata?.picture;
+  useEffect(() => {
+    if (!hasStartedWorld || !profileSessionLoaded || profileUser) return undefined;
+    const timeout = window.setTimeout(() => setShowAuthModal(true), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [hasStartedWorld, profileSessionLoaded, profileUser]);
+
+  useEffect(() => {
+    if (!authModalOpen) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusFrame = window.requestAnimationFrame(() => {
+      document.querySelector('.solution-chat-auth-dialog input')?.focus();
+    });
+    const trapTab = (event) => {
+      if (event.key !== 'Tab') return;
+      const dialog = document.querySelector('.solution-chat-auth-dialog');
+      const focusable = dialog?.querySelectorAll('input:not(:disabled), button:not(:disabled)');
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', trapTab);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousBodyOverflow;
+      document.removeEventListener('keydown', trapTab);
+    };
+  }, [authModalOpen, authModalMode]);
   const unreadNotificationCount = appNotifications.filter((notification) => !notification.read_at).length
     + (dailyNotificationRead ? 0 : 1);
   const isSelectedBibleChapterLoaded = biblePassage?.reference.toLowerCase()
@@ -895,6 +938,7 @@ export default function SolutionChatPage() {
     let active = true;
     const updateSession = (session) => {
       setProfileSession(session);
+      if (session?.user) setShowAuthModal(false);
       if (!session?.user) {
         setCustomerProfile(null);
         setProfileName('');
@@ -905,9 +949,11 @@ export default function SolutionChatPage() {
     };
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       updateSession(session);
+      setProfileSessionLoaded(true);
     });
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
+      setProfileSessionLoaded(true);
       if (error) {
         console.error('Could not load the PAZ World account session:', error);
         setProfileError('Your account could not be checked. Please try again.');
@@ -916,6 +962,7 @@ export default function SolutionChatPage() {
       updateSession(data.session);
     }).catch((error) => {
       if (active) {
+        setProfileSessionLoaded(true);
         console.error('Could not load the PAZ World account session:', error);
         setProfileError('Your account could not be checked. Please try again.');
       }
@@ -1026,6 +1073,67 @@ export default function SolutionChatPage() {
       setProfileNotice('You are signed in to PAZ World.');
     } catch (error) {
       setProfileError(error?.message || 'Sign-in failed. Please check your details and try again.');
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const handleAuthModalSubmit = async (event) => {
+    event.preventDefault();
+    setProfileBusy(true);
+    setProfileError('');
+    setProfileNotice('');
+    try {
+      if (isSupabaseStub) throw new Error('Account access is temporarily unavailable.');
+      const email = profileEmail.trim().toLowerCase();
+      if (!email) throw new Error('Enter your email address.');
+
+      if (authModalMode === 'signUp') {
+        const fullName = authModalName.trim();
+        if (!fullName) throw new Error('Enter your full name.');
+        if (profilePassword.length < 8) throw new Error('Choose a password with at least 8 characters.');
+        if (profilePassword !== authModalConfirmPassword) throw new Error('Your passwords do not match.');
+        if (!authModalConsent) throw new Error('Agree to the System Terms and acknowledge the Privacy Policy to create your account.');
+
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: profilePassword,
+          options: {
+            emailRedirectTo: `${window.location.origin}/paz-world/`,
+            data: {
+              full_name: fullName,
+              first_name: fullName.split(/\s+/)[0] || '',
+              account_type: 'customer',
+              account_role: 'customer',
+              app_source: 'paz-shop',
+              legal_terms_accepted_at: new Date().toISOString(),
+              privacy_policy_acknowledged_at: new Date().toISOString()
+            }
+          }
+        });
+        if (error) throw error;
+        setProfilePassword('');
+        setAuthModalConfirmPassword('');
+        if (data.session) {
+          setShowSplash(false);
+          setProfileNotice('Your PAZ World account is ready.');
+        } else {
+          setAuthModalMode('signIn');
+          setProfileNotice('Account created. Check your email to confirm it, then sign in here.');
+        }
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: profilePassword
+      });
+      if (error) throw error;
+      if (!data.session) throw new Error('Please verify your email address, then sign in again.');
+      setShowSplash(false);
+      setProfilePassword('');
+    } catch (error) {
+      setProfileError(error?.message || 'Account access failed. Please check your details and try again.');
     } finally {
       setProfileBusy(false);
     }
@@ -1804,14 +1912,17 @@ export default function SolutionChatPage() {
 
   return (
     <main className={`solution-chat-app ${selectedCommunityConversation ? 'group-chat-open' : ''}`}>
-      {showSplash && (
+      {showSplash && !authModalOpen && (
         <section className="solution-chat-splash" role="status" aria-label="Opening PAZ World">
           <div className="solution-chat-splash-content">
-            <img className="solution-chat-splash-logo" src="/paz-world/PAZZ_icon_transparent_corners.png" alt="PAZZ Thriving Tribe" />
+            <img className="solution-chat-splash-logo" src="/paz-world/paz-world-logo.png" alt="PAZ Thriving Tribe" />
             <p className="solution-chat-splash-community">— &nbsp; Community Room &nbsp; —</p>
             <p className="solution-chat-splash-features">One on One Coach Session<br />Bible with My Note</p>
             <p className="solution-chat-splash-tagline">Real People <i>•</i> Real Talk <i>•</i> Real Solutions</p>
-            <button className="solution-chat-splash-start" type="button" onClick={() => setShowSplash(false)}>
+            <button className="solution-chat-splash-start" type="button" onClick={() => {
+              setShowSplash(false);
+              setHasStartedWorld(true);
+            }}>
               Get Started
             </button>
           </div>
@@ -1841,7 +1952,7 @@ export default function SolutionChatPage() {
       )}
       <aside className="solution-chat-sidebar" aria-label="PAZ World">
         <a className="solution-chat-brand" href="/paz-world/" aria-label="PAZ World home">
-          <img className="solution-chat-brand-mark" src="/paz-world/PAZZ_icon_transparent_corners.png" alt="" />
+          <img className="solution-chat-brand-mark" src="/paz-world/paz-world-logo.png" alt="" />
           <span>
             <strong>PAZ World</strong>
             <small>Faith for everyday life</small>
@@ -2024,7 +2135,7 @@ export default function SolutionChatPage() {
         <div className="solution-chat-main-content" ref={mainContentRef}>
         {showInstallPrompt && !isInstalled && (
           <section className="solution-chat-install-banner" aria-label="Install PAZ World">
-            <span className="solution-chat-install-icon" aria-hidden="true"><img src="/paz-world/PAZZ_icon_transparent_corners.png" alt="" /></span>
+            <span className="solution-chat-install-icon" aria-hidden="true"><img src="/paz-world/paz-world-logo.png" alt="" /></span>
             <div className="solution-chat-install-copy">
               <strong>Take PAZ World with you</strong>
               <span>Install it on your device for quick access. You can keep using the web app either way.</span>
@@ -2129,11 +2240,11 @@ export default function SolutionChatPage() {
                 </div>
                 <div className="solution-chat-mentor-privacy" role="status">
                   <i className="fa-solid fa-lock" aria-hidden="true"></i>
-                  <span><strong>Private to your PAZ account.</strong> Messages are sent securely to PAZ’s AI service (OpenAI) to generate replies. They are not shared with Community Room or saved as chat history. Avoid sharing passwords or highly sensitive personal details.</span>
+                  <span><strong>A supportive space for your parenting questions.</strong> Your message is sent to Claude to generate a reply; it is not posted in Community Room or saved by PAZ as chat history. Avoid sharing names, addresses, passwords, or other identifying details about your family.</span>
                 </div>
                 <div className="solution-chat-mentor-thread" aria-live="polite" aria-label="Conversation with Mentor Charles">
                   <article className="solution-chat-mentor-message assistant">
-                    <p>Hello, I’m Mentor Charles. You can share what’s on your heart, and I’ll help you reflect with encouragement and Bible references.</p>
+                    <p>Welcome. Parenting a pre-teen or teenager can bring hard questions, and you deserve support without blame. Tell me what’s been happening; together we can look for a thoughtful next step that respects both you and your young person.</p>
                   </article>
                   {mentorMessages.map((message, index) => (
                     <article className={`solution-chat-mentor-message ${message.role}`} key={`${message.role}-${index}`}>
@@ -2159,7 +2270,7 @@ export default function SolutionChatPage() {
                     id="mentor-charles-message"
                     value={question}
                     onChange={(event) => { setQuestion(event.target.value); setStatusMessage(''); }}
-                    placeholder="Message AI Mentor Charles..."
+                    placeholder="What’s been happening with your pre-teen or teenager?"
                     rows={2}
                     maxLength={2000}
                     disabled={mentorIsSending}
@@ -2174,7 +2285,7 @@ export default function SolutionChatPage() {
                     {mentorNeedsSignIn && <button type="button" onClick={() => openSection({ id: 'profile' })}>Sign in</button>}
                   </div>
                 )}
-                <p className="solution-chat-disclaimer">Faith-based reflection is not a substitute for professional care or emergency support.</p>
+                <p className="solution-chat-disclaimer">Mentor Charles offers general parenting support, not professional mental-health, medical, or emergency care.</p>
               </section>
             ) : (
           <div className={`solution-chat-community ${selectedCommunityConversation ? 'is-group-chat' : ''}`}>
@@ -2940,7 +3051,7 @@ export default function SolutionChatPage() {
             <span className="solution-chat-welcome-icon" aria-hidden="true"><i className="fa-solid fa-hands-praying"></i></span>
             <p className="solution-chat-eyebrow">YOU DON’T HAVE TO FIGURE IT OUT ALONE</p>
             <h2>What’s on your heart today?</h2>
-            <p>Share what you’re going through. Ask Mentor Charles for thoughtful encouragement and Bible references to help you reflect.</p>
+            <p>Parenting a pre-teen or teenager can feel difficult, and asking for support does not mean you have failed. Share what’s happening and explore a caring, practical next step without judgment.</p>
           </div>
 
           <div className="solution-chat-suggestions" aria-label="Example questions">
@@ -2992,12 +3103,109 @@ export default function SolutionChatPage() {
         }}>
           <section className="solution-chat-install-dialog" role="dialog" aria-modal="true" aria-labelledby="solution-chat-install-title">
             <button type="button" className="solution-chat-dialog-close" onClick={() => setShowInstallHelp(false)} aria-label="Close install instructions">×</button>
-            <span className="solution-chat-install-icon" aria-hidden="true"><img src="/paz-world/PAZZ_icon_transparent_corners.png" alt="" /></span>
+            <span className="solution-chat-install-icon" aria-hidden="true"><img src="/paz-world/paz-world-logo.png" alt="" /></span>
             <h2 id="solution-chat-install-title">Install PAZ World</h2>
             <p>{/iphone|ipad|ipod/i.test(navigator.userAgent)
               ? 'Tap the Share button in your browser, then choose “Add to Home Screen.”'
               : 'Open your browser menu and choose “Install PAZ World” or “Add to Home screen.”'}</p>
             <button type="button" className="solution-chat-install-button" onClick={() => setShowInstallHelp(false)}>Got it</button>
+          </section>
+        </div>
+      )}
+      {authModalOpen && (
+        <div className="solution-chat-dialog-backdrop solution-chat-auth-backdrop">
+          <section className="solution-chat-auth-dialog" role="dialog" aria-modal="true" aria-labelledby="solution-chat-auth-title">
+            <span className="solution-chat-install-icon" aria-hidden="true">
+              <img src="/paz-world/paz-world-logo.png" alt="" />
+            </span>
+            <p className="solution-chat-eyebrow">ONE ACCOUNT ACROSS PAZ</p>
+            <h2 id="solution-chat-auth-title">{authModalMode === 'signUp' ? 'Create your PAZ World account' : 'Sign in to PAZ World'}</h2>
+            <p className="solution-chat-auth-description">
+              Use your PAZ Shop account, or create an account to continue to PAZ World and chat with Mentor Charles.
+            </p>
+            {profileError && <p className="solution-chat-profile-error" role="alert">{profileError}</p>}
+            {profileNotice && <p className="solution-chat-profile-notice" role="status">{profileNotice}</p>}
+            <form className="solution-chat-auth-form" onSubmit={handleAuthModalSubmit}>
+              {authModalMode === 'signUp' && (
+                <>
+                  <label htmlFor="solution-chat-auth-name">Full name</label>
+                  <input
+                    id="solution-chat-auth-name"
+                    type="text"
+                    autoComplete="name"
+                    value={authModalName}
+                    onChange={(event) => setAuthModalName(event.target.value)}
+                    maxLength={120}
+                    required
+                  />
+                </>
+              )}
+              <label htmlFor="solution-chat-auth-email">Email address</label>
+              <input
+                id="solution-chat-auth-email"
+                type="email"
+                autoComplete="email"
+                value={profileEmail}
+                onChange={(event) => setProfileEmail(event.target.value)}
+                required
+              />
+              <label htmlFor="solution-chat-auth-password">Password</label>
+              <input
+                id="solution-chat-auth-password"
+                type="password"
+                autoComplete={authModalMode === 'signUp' ? 'new-password' : 'current-password'}
+                value={profilePassword}
+                onChange={(event) => setProfilePassword(event.target.value)}
+                minLength={authModalMode === 'signUp' ? 8 : undefined}
+                required
+              />
+              {authModalMode === 'signUp' && (
+                <>
+                  <label htmlFor="solution-chat-auth-confirm-password">Confirm password</label>
+                  <input
+                    id="solution-chat-auth-confirm-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={authModalConfirmPassword}
+                    onChange={(event) => setAuthModalConfirmPassword(event.target.value)}
+                    minLength={8}
+                    required
+                  />
+                </>
+              )}
+              {authModalMode === 'signUp' && (
+                <label className="solution-chat-auth-consent">
+                  <input
+                    type="checkbox"
+                    checked={authModalConsent}
+                    onChange={(event) => setAuthModalConsent(event.target.checked)}
+                    required
+                  />
+                  <span>I agree to the PAZ System Terms and acknowledge the Privacy Policy, including how PAZ uses account information.</span>
+                </label>
+              )}
+              <button className="solution-chat-primary-action" type="submit" disabled={profileBusy || isSupabaseStub}>
+                {profileBusy ? 'Please wait…' : authModalMode === 'signUp' ? 'Create account' : 'Sign in'}
+              </button>
+              {isSupabaseStub && <p className="solution-chat-profile-hint">Account access is unavailable until Supabase is configured.</p>}
+            </form>
+            <p className="solution-chat-auth-switch">
+              {authModalMode === 'signUp' ? 'Already have a PAZ account?' : 'New to PAZ?'}
+              {' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthModalMode((mode) => mode === 'signUp' ? 'signIn' : 'signUp');
+                  setProfileError('');
+                  setProfileNotice('');
+                  setProfilePassword('');
+                  setAuthModalConfirmPassword('');
+                  setAuthModalConsent(false);
+                }}
+              >
+                {authModalMode === 'signUp' ? 'Sign in' : 'Create an account'}
+              </button>
+            </p>
           </section>
         </div>
       )}
