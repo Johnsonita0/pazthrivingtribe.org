@@ -1553,7 +1553,7 @@ export default function SolutionChatPage() {
       if (!response.ok) {
         if (response.status === 401) {
           setMentorNeedsSignIn(true);
-          throw new Error('Your account is signed in, but PAZ could not verify this session. Sign out and sign in again; if this continues, contact PAZ support.');
+          throw new Error(payload.error || 'PAZ could not verify this account session. Please contact PAZ support.');
         }
         throw new Error(payload.error || 'Mentor Charles could not reply. Please try again.');
       }
