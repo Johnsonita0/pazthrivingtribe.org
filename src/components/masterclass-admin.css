@@ -114,69 +114,12 @@
   color: #b42318;
 }
 
-.masterclass-email-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 15px 17px;
-  border: 1px solid #e7d8ed;
-  border-radius: 12px;
-  background: #faf6fc;
-}
-
-.masterclass-email-summary > div {
-  display: grid;
-  gap: 3px;
-}
-
-.masterclass-email-summary-label {
-  color: #667085;
-  font-size: .78rem;
-  font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-}
-
-.masterclass-email-summary strong {
-  color: #641479;
-  font-size: 1.5rem;
-}
-
-.masterclass-email-summary details {
-  color: #3d3150;
-  font-size: .88rem;
-}
-
-.masterclass-email-summary summary {
-  cursor: pointer;
-  font-weight: 750;
-}
-
-.masterclass-email-summary ul {
-  display: grid;
-  gap: 5px;
-  max-height: 150px;
-  overflow: auto;
-  margin: 8px 0 0;
-  padding-left: 20px;
-}
-
-.masterclass-email-summary li {
-  overflow-wrap: anywhere;
-}
-
-.masterclass-email-summary p {
-  margin: 8px 0 0;
-  color: #667085;
-}
-
 .masterclass-email-form {
   display: grid;
-  gap: 15px;
+  gap: 18px;
 }
 
-.masterclass-email-form > label {
+.masterclass-meet-link-field {
   display: grid;
   gap: 7px;
   color: #3d3150;
@@ -184,73 +127,195 @@
   font-weight: 750;
 }
 
-.masterclass-email-form input,
-.masterclass-email-form textarea {
+.masterclass-email-form input {
   width: 100%;
   box-sizing: border-box;
-  padding: 11px 12px;
-  border: 1px solid #d5c1de;
-  border-radius: 9px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid #c8d8cf;
+  border-radius: 10px;
   background: #fff;
-  color: #241147;
+  color: #173b32;
   font: inherit;
   font-weight: 400;
 }
 
-.masterclass-email-form textarea {
-  min-height: 170px;
-  resize: vertical;
-  line-height: 1.55;
-}
-
-.masterclass-email-form input:focus-visible,
-.masterclass-email-form textarea:focus-visible {
-  outline: 3px solid #e7d8ed;
+.masterclass-email-form input:focus-visible {
+  outline: 3px solid #dcece2;
   outline-offset: 1px;
 }
 
-.masterclass-email-help {
-  margin: -5px 0 0;
-  color: #667085;
-  font-size: .84rem;
-  line-height: 1.5;
-}
-
-.masterclass-email-help code {
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: #f3eafa;
-  color: #641479;
-}
-
 .masterclass-email-preview {
+  overflow: hidden;
+  width: 100%;
+  max-width: 680px;
+  justify-self: center;
+  border: 1px solid #dfeee4;
+  border-radius: 18px;
+  background: #edf4ef;
+  box-shadow: 0 12px 28px rgb(11 47 42 / 9%);
+  color: #1d3d39;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.masterclass-email-preview-subject {
   display: grid;
-  gap: 8px;
-  padding: 15px;
-  border: 1px solid #e7d8ed;
-  border-radius: 11px;
-  background: #fdfaff;
-  color: #3d3150;
-  font-size: .88rem;
+  gap: 2px;
+  padding: 10px 16px;
+  background: #e2ece5;
+  color: #35584c;
+  font-size: 12px;
 }
 
-.masterclass-email-preview > strong {
-  color: #241147;
-  font-size: .95rem;
+.masterclass-email-preview-subject span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
-.masterclass-email-preview > span {
+.masterclass-email-preview-subject strong {
   overflow-wrap: anywhere;
 }
 
-.masterclass-email-preview pre {
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+.masterclass-email-preview-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 112px;
+  padding: 20px;
+  background: linear-gradient(135deg, #0b2f2a, #123d35 52%, #1c5c4a);
+  color: #f7e7b4;
+}
+
+.masterclass-email-preview-brand img {
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  object-fit: contain;
+  padding: 6px;
+}
+
+.masterclass-email-preview-brand div {
+  display: grid;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.masterclass-email-preview-brand strong {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.masterclass-email-preview-brand span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.masterclass-email-preview-content {
+  padding: 26px 28px 24px;
+  background: #fff;
+}
+
+.masterclass-email-preview-eyebrow {
+  color: #1c6d5d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+
+.masterclass-email-preview-content h3 {
+  margin: 14px 0 10px;
+  color: #0d2f2a;
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.masterclass-email-preview-content p {
+  margin: 0 0 12px;
+  color: #1d3d39;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.masterclass-email-preview-cta {
+  display: inline-block;
+  margin: 6px 0 18px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 14px 20px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e3bf6a, #d4a848);
+  color: #152b24;
+  font-size: 14px;
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
+}
+
+.masterclass-email-preview-cta:not(.is-placeholder) {
+  display: table;
+}
+
+.masterclass-email-preview-cta.is-placeholder {
+  opacity: .76;
+}
+
+.masterclass-email-preview-content .masterclass-email-preview-signoff {
   margin: 0;
-  padding-top: 9px;
-  border-top: 1px solid #eee4f2;
-  font: inherit;
-  line-height: 1.55;
+}
+
+.masterclass-email-preview-signoff strong {
+  color: #0b352d;
+}
+
+.masterclass-email-preview-footer {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 20px 16px 24px;
+  background: #0b2a23;
+  color: #dfeeea;
+  font-size: 12px;
+  line-height: 1.8;
+  text-align: center;
+}
+
+.masterclass-email-preview-footer > strong {
+  color: #f7d980;
+  font-size: 14px;
+}
+
+.masterclass-email-preview-socials {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.masterclass-email-preview-socials span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #55746a;
+  border-radius: 50%;
+  background: #344f47;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.masterclass-email-result p {
+  margin: 5px 0 0;
 }
 
 .masterclass-email-result {
@@ -266,14 +331,6 @@
   border-color: #fedf89;
   background: #fffaeb;
   color: #b54708;
-}
-
-.masterclass-email-result ul {
-  display: grid;
-  gap: 5px;
-  margin: 9px 0 0;
-  padding-left: 20px;
-  overflow-wrap: anywhere;
 }
 
 .masterclass-email-send {
@@ -319,9 +376,8 @@
     width: 100%;
   }
 
-  .masterclass-email-summary {
-    align-items: stretch;
-    flex-direction: column;
+  .masterclass-email-preview-content {
+    padding: 22px 18px;
   }
 
   .masterclass-email-send {

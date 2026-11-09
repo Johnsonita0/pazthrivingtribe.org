@@ -81,19 +81,25 @@ function AdminTabBar({ selectedTab, onChangeTab }) {
   );
 }
 
-function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session }) {
+function isValidMasterclassMeetLink(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && url.hostname === "meet.google.com"
+      && !url.port
+      && url.pathname !== "/"
+      && !url.username
+      && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function MasterclassAdminPanel({ session }) {
   const [meetLink, setMeetLink] = useState("");
-  const [emailSubject, setEmailSubject] = useState("Your PAZ Parent Masterclass Google Meet link");
-  const [emailTemplate, setEmailTemplate] = useState(
-    "Hello {{name}},\n\nThank you for registering for the PAZ Parent Masterclass, “Getting Your Teenager to Speak to You.”\n\nJoin the online session using this Google Meet link:\n{{meetLink}}\n\nPlease join a few minutes early. We look forward to seeing you!",
-  );
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
-  const emailRecipients = [...new Set(
-    registrants
-      .map((registrant) => String(registrant.email || "").trim().toLowerCase())
-      .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)),
-  )];
+  const validMeetLink = isValidMasterclassMeetLink(meetLink);
 
   const sendMeetLink = async (event) => {
     event.preventDefault();
@@ -116,8 +122,6 @@ function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session
         body: JSON.stringify({
           action: "send_masterclass_meet_link",
           meetLink,
-          subject: emailSubject,
-          emailTemplate,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -136,95 +140,67 @@ function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session
         <div>
           <span>PAZ Thriving Teens Academy</span>
           <h2 id="masterclass-admin-title">Master Class</h2>
-          <p>Send the Google Meet link to everyone who registered.</p>
-        </div>
-        <div className="masterclass-admin-actions">
-          <button type="button" onClick={onRefresh} disabled={loading}>
-            <i className={`fa-solid ${loading ? "fa-spinner fa-spin" : "fa-rotate"}`} aria-hidden="true"></i>
-            {loading ? "Loading…" : "Refresh"}
-          </button>
+          <p>Add the Google Meet link, preview the email, and send it to everyone registered.</p>
         </div>
       </div>
-      {error && <p className="masterclass-admin-error" role="alert">{error}</p>}
       <div className="masterclass-admin-tab-panel">
-          <div className="masterclass-email-summary">
-            <div>
-              <span className="masterclass-email-summary-label">Unique recipients</span>
-              <strong>{loading && registrants.length === 0 ? "…" : emailRecipients.length}</strong>
-            </div>
-            <details>
-              <summary>Review recipient emails</summary>
-              {emailRecipients.length ? (
-                <ul>{emailRecipients.map((email) => <li key={email}>{email}</li>)}</ul>
-              ) : (
-                <p>{loading ? "Loading participant emails…" : "No registered email addresses are available."}</p>
-              )}
-            </details>
-          </div>
         <form className="masterclass-email-form" onSubmit={sendMeetLink}>
-            <label>
-              <span>Google Meet link</span>
-              <input
-                type="url"
-                value={meetLink}
-                onChange={(event) => {
-                  setMeetLink(event.target.value);
-                  setSendResult(null);
-                }}
-                placeholder="https://meet.google.com/abc-defg-hij"
-                required
-              />
-            </label>
-            <label>
+          <label className="masterclass-meet-link-field">
+            <span>Google Meet link</span>
+            <input
+              type="url"
+              value={meetLink}
+              onChange={(event) => {
+                setMeetLink(event.target.value);
+                setSendResult(null);
+              }}
+              placeholder="https://meet.google.com/abc-defg-hij"
+              required
+            />
+          </label>
+          <section className="masterclass-email-preview" aria-label="Branded email preview">
+            <div className="masterclass-email-preview-subject">
               <span>Email subject</span>
-              <input
-                type="text"
-                value={emailSubject}
-                onChange={(event) => {
-                  setEmailSubject(event.target.value);
-                  setSendResult(null);
-                }}
-                maxLength={200}
-                required
-              />
-            </label>
-            <label>
-              <span>Email message</span>
-              <textarea
-                value={emailTemplate}
-                onChange={(event) => {
-                  setEmailTemplate(event.target.value);
-                  setSendResult(null);
-                }}
-                rows={8}
-                maxLength={5000}
-                required
-              />
-            </label>
-            <p className="masterclass-email-help">
-              Keep <code>{"{{name}}"}</code> and <code>{"{{meetLink}}"}</code> in the template. They are replaced with each participant’s name and your Google Meet link.
-            </p>
-            <div className="masterclass-email-preview">
-              <strong>Email preview</strong>
-              <span>To: {emailRecipients[0] || "participant email"}{emailRecipients.length > 1 ? ` and ${emailRecipients.length - 1} others` : ""}</span>
-              <span>Subject: {emailSubject || "Your subject"}</span>
-              <pre>{emailTemplate
-                .replace(/\{\{name\}\}/g, registrants[0]?.registrant_name || "Participant")
-                .replace(/\{\{meetLink\}\}/g, meetLink || "[Google Meet link]")}</pre>
+              <strong>Your PAZ Parent Masterclass link is here</strong>
             </div>
-            {sendResult?.error && <p className="masterclass-admin-error" role="alert">{sendResult.error}</p>}
-            {sendResult && !sendResult.error && (
-              <div className={sendResult.failed ? "masterclass-email-result is-warning" : "masterclass-email-result"} role="status" aria-live="polite">
-                <strong>{sendResult.sent} of {sendResult.total} emails sent.</strong>
-                {sendResult.failed > 0 && (
-                  <ul>{sendResult.failures.map((failure) => <li key={failure.email}>{failure.email}: {failure.error}</li>)}</ul>
-                )}
+            <div className="masterclass-email-preview-brand">
+              <img src="/logo/logo2.jpeg" alt="PAZ Thriving Tribe" />
+              <div><strong>PAZ</strong><span>THRIVING TRIBE</span></div>
+            </div>
+            <div className="masterclass-email-preview-content">
+              <span className="masterclass-email-preview-eyebrow">PAZ PARENT MASTERCLASS</span>
+              <h3>We’re looking forward to seeing you</h3>
+              <p>Hello Participant,</p>
+              <p>Thank you for registering for our masterclass, “Getting Your Teenager to Speak to You.” We’re so glad you’ll be joining us.</p>
+              <p>We hope the session brings you practical ideas and fresh encouragement for having more open, meaningful conversations with your teen.</p>
+              <p>Join us at the scheduled time using the button below. If you need help getting into the session, simply reply to this email—we’ll be happy to help.</p>
+              {validMeetLink ? (
+                <a className="masterclass-email-preview-cta" href={meetLink} target="_blank" rel="noopener noreferrer">Join the masterclass on Google Meet</a>
+              ) : (
+                <span className="masterclass-email-preview-cta is-placeholder">Join the masterclass on Google Meet</span>
+              )}
+              <p className="masterclass-email-preview-signoff">With warm wishes,<br /><strong>The PAZ Thriving Tribe Team</strong></p>
+            </div>
+            <footer className="masterclass-email-preview-footer">
+              <div className="masterclass-email-preview-socials" aria-hidden="true">
+                <span>◎</span><span>f</span><span>WA</span><span>in</span>
               </div>
-            )}
-            <button className="masterclass-email-send" type="submit" disabled={sending || emailRecipients.length === 0 || !meetLink.trim() || !emailSubject.trim() || !emailTemplate.trim()}>
-              <i className={`fa-solid ${sending ? "fa-spinner fa-spin" : "fa-paper-plane"}`} aria-hidden="true"></i>
-              {sending ? "Sending emails…" : `Send Meet Link to ${emailRecipients.length} participants`}
-            </button>
+              <strong>PAZ Thriving Tribe</strong>
+              <span>We’re here to support your family’s growth journey.</span>
+              <span>pazthrivingtribe@gmail.com · +234 803 738 3820</span>
+            </footer>
+          </section>
+          {sendResult?.error && <p className="masterclass-admin-error" role="alert">{sendResult.error}</p>}
+          {sendResult && !sendResult.error && (
+            <div className={sendResult.failed ? "masterclass-email-result is-warning" : "masterclass-email-result"} role="status" aria-live="polite">
+              <strong>{sendResult.sent} of {sendResult.total} emails sent.</strong>
+              {sendResult.failed > 0 && <p>{sendResult.failed} emails could not be delivered. Please check the email service and try again.</p>}
+            </div>
+          )}
+          <button className="masterclass-email-send" type="submit" disabled={sending || !validMeetLink}>
+            <i className={`fa-solid ${sending ? "fa-spinner fa-spin" : "fa-paper-plane"}`} aria-hidden="true"></i>
+            {sending ? "Sending email…" : "Send email to participants"}
+          </button>
         </form>
       </div>
     </section>
@@ -7630,15 +7606,7 @@ export default function AdminDashboard(props) {
                 </div>
               </div>
             ) : activeDashboardView === "masterclass" ? (
-              <MasterclassAdminPanel
-                registrants={masterclassRegistrants}
-                loading={masterclassRegistrantsLoading}
-                session={session}
-                error={masterclassSessionToken
-                  ? masterclassRegistrantsError
-                  : "Your admin session has expired. Sign in again to view registrations."}
-                onRefresh={() => setMasterclassRegistrantsRefreshKey((key) => key + 1)}
-              />
+              <MasterclassAdminPanel session={session} />
             ) : (
               <>
                 <h2
