@@ -93,13 +93,61 @@ function escapeMasterclassCsvCell(value) {
   return `"${safeText.replace(/"/g, '""')}"`;
 }
 
-function MasterclassRegistrantsPanel({ registrants, loading, error, onRefresh }) {
+function MasterclassRegistrantsPanel({ registrants, loading, error, onRefresh, session }) {
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState("registrants");
+  const [meetLink, setMeetLink] = useState("");
+  const [emailSubject, setEmailSubject] = useState("Your PAZ Parent Masterclass Google Meet link");
+  const [emailTemplate, setEmailTemplate] = useState(
+    "Hello {{name}},\n\nThank you for registering for the PAZ Parent Masterclass, “Getting Your Teenager to Speak to You.”\n\nJoin the online session using this Google Meet link:\n{{meetLink}}\n\nPlease join a few minutes early. We look forward to seeing you!",
+  );
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState(null);
   const normalizedSearch = search.trim().toLowerCase();
   const filteredRegistrants = registrants.filter((registrant) =>
     [registrant.registrant_name, registrant.email, registrant.phone]
       .some((value) => String(value || "").toLowerCase().includes(normalizedSearch)),
   );
+  const emailRecipients = [...new Set(
+    registrants
+      .map((registrant) => String(registrant.email || "").trim().toLowerCase())
+      .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)),
+  )];
+
+  const sendMeetLink = async (event) => {
+    event.preventDefault();
+    if (sending) return;
+    const token = session?.access_token || session?.accessToken || "";
+    if (!token) {
+      setSendResult({ error: "Your admin session has expired. Sign in again before sending." });
+      return;
+    }
+
+    setSending(true);
+    setSendResult(null);
+    try {
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "send_masterclass_meet_link",
+          meetLink,
+          subject: emailSubject,
+          emailTemplate,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not send the masterclass email.");
+      setSendResult(result);
+    } catch (sendError) {
+      setSendResult({ error: sendError?.message || "Could not send the masterclass email." });
+    } finally {
+      setSending(false);
+    }
+  };
 
   const exportRegistrants = () => {
     const columns = ["Name", "Email", "Phone", "Event", "Registered at"];
@@ -141,62 +189,174 @@ function MasterclassRegistrantsPanel({ registrants, loading, error, onRefresh })
         </div>
       </div>
       {error && <p className="masterclass-admin-error" role="alert">{error}</p>}
-      <div className="masterclass-admin-toolbar">
-        <label htmlFor="masterclass-registrant-search">Search registrants</label>
-        <input
-          id="masterclass-registrant-search"
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Name, email, or phone"
-        />
-        <span aria-live="polite">
-          {normalizedSearch
-            ? `${filteredRegistrants.length} of ${registrants.length} registrants`
-            : `${registrants.length} registrants`}
-        </span>
+      <div className="masterclass-admin-tabs" role="tablist" aria-label="Masterclass admin sections">
+        <button
+          id="masterclass-registrants-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "registrants"}
+          aria-controls="masterclass-registrants-panel"
+          className={activeTab === "registrants" ? "active" : ""}
+          onClick={() => setActiveTab("registrants")}
+        >
+          <i className="fa-solid fa-users" aria-hidden="true"></i>
+          Registrants
+        </button>
+        <button
+          id="masterclass-meet-link-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "meet-link"}
+          aria-controls="masterclass-meet-link-panel"
+          className={activeTab === "meet-link" ? "active" : ""}
+          onClick={() => setActiveTab("meet-link")}
+        >
+          <i className="fa-solid fa-paper-plane" aria-hidden="true"></i>
+          Send Meet Link
+        </button>
       </div>
-      {loading && registrants.length === 0 ? (
-        <p className="masterclass-admin-empty" role="status">Loading registrations…</p>
-      ) : registrants.length === 0 ? (
-        <p className="masterclass-admin-empty">No masterclass registrations yet.</p>
-      ) : filteredRegistrants.length === 0 ? (
-        <p className="masterclass-admin-empty">No registrants match your search.</p>
+      {activeTab === "registrants" ? (
+        <div id="masterclass-registrants-panel" role="tabpanel" aria-labelledby="masterclass-registrants-tab" className="masterclass-admin-tab-panel">
+          <div className="masterclass-admin-toolbar">
+            <label htmlFor="masterclass-registrant-search">Search registrants</label>
+            <input
+              id="masterclass-registrant-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Name, email, or phone"
+            />
+            <span aria-live="polite">
+              {normalizedSearch
+                ? `${filteredRegistrants.length} of ${registrants.length} registrants`
+                : `${registrants.length} registrants`}
+            </span>
+          </div>
+          {loading && registrants.length === 0 ? (
+            <p className="masterclass-admin-empty" role="status">Loading registrations…</p>
+          ) : registrants.length === 0 ? (
+            <p className="masterclass-admin-empty">No masterclass registrations yet.</p>
+          ) : filteredRegistrants.length === 0 ? (
+            <p className="masterclass-admin-empty">No registrants match your search.</p>
+          ) : (
+            <div className="masterclass-registrant-list">
+              {filteredRegistrants.map((registrant) => {
+                const whatsappNumber = getMasterclassWhatsappNumber(registrant.phone);
+                const message = `Hello ${registrant.registrant_name}, thank you for registering for the PAZ Parent Masterclass “Getting Your Teenager to Speak to You.” Please let us know if you need help with payment or joining the online session.`;
+                const whatsappLink = whatsappNumber
+                  ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
+                  : "";
+                return (
+                  <article className="masterclass-registrant-card" key={registrant.id}>
+                    <div className="masterclass-registrant-details">
+                      <h3>{registrant.registrant_name}</h3>
+                      {registrant.reference_number && <span>Reference {registrant.reference_number}</span>}
+                      <a href={`mailto:${registrant.email}`}>{registrant.email}</a>
+                      <a href={`tel:${registrant.phone}`}>{registrant.phone}</a>
+                      <span>
+                        Registered {registrant.created_at
+                          ? new Date(registrant.created_at).toLocaleString()
+                          : "date unavailable"}
+                      </span>
+                    </div>
+                    {whatsappLink ? (
+                      <a className="masterclass-registrant-whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
+                        <i className="fa-brands fa-whatsapp" aria-hidden="true"></i>
+                        WhatsApp
+                      </a>
+                    ) : (
+                      <span className="masterclass-registrant-invalid-phone">Phone number unavailable</span>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          <p className="masterclass-admin-note">WhatsApp opens a prefilled message for the selected registrant. Review it and press Send in WhatsApp.</p>
+        </div>
       ) : (
-        <div className="masterclass-registrant-list">
-          {filteredRegistrants.map((registrant) => {
-            const whatsappNumber = getMasterclassWhatsappNumber(registrant.phone);
-            const message = `Hello ${registrant.registrant_name}, thank you for registering for the PAZ Parent Masterclass “Getting Your Teenager to Speak to You.” Please let us know if you need help with payment or joining the online session.`;
-            const whatsappLink = whatsappNumber
-              ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
-              : "";
-            return (
-              <article className="masterclass-registrant-card" key={registrant.id}>
-                <div className="masterclass-registrant-details">
-                  <h3>{registrant.registrant_name}</h3>
-                  {registrant.reference_number && <span>Reference {registrant.reference_number}</span>}
-                  <a href={`mailto:${registrant.email}`}>{registrant.email}</a>
-                  <a href={`tel:${registrant.phone}`}>{registrant.phone}</a>
-                  <span>
-                    Registered {registrant.created_at
-                      ? new Date(registrant.created_at).toLocaleString()
-                      : "date unavailable"}
-                  </span>
-                </div>
-                {whatsappLink ? (
-                  <a className="masterclass-registrant-whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
-                    <i className="fa-brands fa-whatsapp" aria-hidden="true"></i>
-                    WhatsApp
-                  </a>
-                ) : (
-                  <span className="masterclass-registrant-invalid-phone">Phone number unavailable</span>
+        <div id="masterclass-meet-link-panel" role="tabpanel" aria-labelledby="masterclass-meet-link-tab" className="masterclass-admin-tab-panel">
+          <div className="masterclass-email-summary">
+            <div>
+              <span className="masterclass-email-summary-label">Unique recipients</span>
+              <strong>{emailRecipients.length}</strong>
+            </div>
+            <details>
+              <summary>Review recipient emails</summary>
+              {emailRecipients.length ? (
+                <ul>{emailRecipients.map((email) => <li key={email}>{email}</li>)}</ul>
+              ) : (
+                <p>No registered email addresses are available.</p>
+              )}
+            </details>
+          </div>
+          <form className="masterclass-email-form" onSubmit={sendMeetLink}>
+            <label>
+              <span>Google Meet link</span>
+              <input
+                type="url"
+                value={meetLink}
+                onChange={(event) => {
+                  setMeetLink(event.target.value);
+                  setSendResult(null);
+                }}
+                placeholder="https://meet.google.com/abc-defg-hij"
+                required
+              />
+            </label>
+            <label>
+              <span>Email subject</span>
+              <input
+                type="text"
+                value={emailSubject}
+                onChange={(event) => {
+                  setEmailSubject(event.target.value);
+                  setSendResult(null);
+                }}
+                maxLength={200}
+                required
+              />
+            </label>
+            <label>
+              <span>Email message</span>
+              <textarea
+                value={emailTemplate}
+                onChange={(event) => {
+                  setEmailTemplate(event.target.value);
+                  setSendResult(null);
+                }}
+                rows={8}
+                maxLength={5000}
+                required
+              />
+            </label>
+            <p className="masterclass-email-help">
+              Keep <code>{"{{name}}"}</code> and <code>{"{{meetLink}}"}</code> in the template. They are replaced with each participant’s name and your Google Meet link.
+            </p>
+            <div className="masterclass-email-preview">
+              <strong>Email preview</strong>
+              <span>To: {emailRecipients[0] || "participant email"}{emailRecipients.length > 1 ? ` and ${emailRecipients.length - 1} others` : ""}</span>
+              <span>Subject: {emailSubject || "Your subject"}</span>
+              <pre>{emailTemplate
+                .replace(/\{\{name\}\}/g, registrants[0]?.registrant_name || "Participant")
+                .replace(/\{\{meetLink\}\}/g, meetLink || "[Google Meet link]")}</pre>
+            </div>
+            {sendResult?.error && <p className="masterclass-admin-error" role="alert">{sendResult.error}</p>}
+            {sendResult && !sendResult.error && (
+              <div className={sendResult.failed ? "masterclass-email-result is-warning" : "masterclass-email-result"} role="status" aria-live="polite">
+                <strong>{sendResult.sent} of {sendResult.total} emails sent.</strong>
+                {sendResult.failed > 0 && (
+                  <ul>{sendResult.failures.map((failure) => <li key={failure.email}>{failure.email}: {failure.error}</li>)}</ul>
                 )}
-              </article>
-            );
-          })}
+              </div>
+            )}
+            <button className="masterclass-email-send" type="submit" disabled={sending || emailRecipients.length === 0 || !meetLink.trim() || !emailSubject.trim() || !emailTemplate.trim()}>
+              <i className={`fa-solid ${sending ? "fa-spinner fa-spin" : "fa-paper-plane"}`} aria-hidden="true"></i>
+              {sending ? "Sending emails…" : `Send Meet Link to ${emailRecipients.length} participants`}
+            </button>
+          </form>
         </div>
       )}
-      <p className="masterclass-admin-note">WhatsApp opens a prefilled message for the selected registrant. Review it and press Send in WhatsApp.</p>
     </section>
   );
 }
@@ -7603,6 +7763,7 @@ export default function AdminDashboard(props) {
               <MasterclassRegistrantsPanel
                 registrants={masterclassRegistrants}
                 loading={masterclassRegistrantsLoading}
+                session={session}
                 error={masterclassSessionToken
                   ? masterclassRegistrantsError
                   : "Your admin session has expired. Sign in again to view registrations."}
