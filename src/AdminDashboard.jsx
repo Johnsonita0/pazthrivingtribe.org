@@ -2742,6 +2742,12 @@ export default function AdminDashboard(props) {
 
   const dashboardViews = [
     {
+      id: "masterclass",
+      label: "Masterclass Registrants",
+      color: "#79158d",
+      value: masterclassRegistrants.length,
+    },
+    {
       id: "visitors",
       label: "Visits",
       color: "#2e7af0",
@@ -2828,12 +2834,6 @@ export default function AdminDashboard(props) {
       label: "YouTube",
       color: "#dc2626",
       value: socialNewsFeed.filter((item) => item.platform === "YouTube").length,
-    },
-    {
-      id: "masterclass",
-      label: "Masterclass Registrants",
-      color: "#79158d",
-      value: masterclassRegistrants.length,
     },
   ];
 
@@ -3317,6 +3317,14 @@ export default function AdminDashboard(props) {
               testimonials.
             </p>
           </div>
+          <button
+            className="masterclass-dashboard-shortcut"
+            type="button"
+            onClick={() => focusDashboardView(setActiveDashboardView, "masterclass")}
+          >
+            <i className="fa-solid fa-users" aria-hidden="true"></i>
+            Open Masterclass Monitor
+          </button>
         </div>
 
         <style>{`
