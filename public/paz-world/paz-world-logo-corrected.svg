@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="logo-background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#001e80" />
+      <stop offset="1" stop-color="#00135e" />
+    </linearGradient>
+  </defs>
+  <image href="PAZZ_icon_transparent_corners.png" width="512" height="512" />
+  <rect x="88" y="339" width="336" height="96" fill="url(#logo-background)" />
+  <text
+    x="256"
+    y="419"
+    fill="#fff"
+    font-family="Arial Rounded MT Bold, Trebuchet MS, Arial, sans-serif"
+    font-size="82"
+    font-weight="800"
+    letter-spacing="1"
+    text-anchor="middle"
+  >PAZ</text>
+</svg>

@@ -3252,6 +3252,10 @@
   line-height: 1.6;
 }
 
+.solution-chat-daily-devotional-story p {
+  white-space: pre-line;
+}
+
 .solution-chat-daily-devotional-language-note {
   margin: -4px 0 0;
   color: #7a6845;

@@ -1,0 +1,255 @@
+.masterclass-page {
+  min-height: calc(100vh - 72px);
+  display: grid;
+  place-items: start center;
+  padding: clamp(24px, 5vw, 56px) 16px;
+  background:
+    radial-gradient(circle at 90% 5%, rgba(234, 213, 255, .75), transparent 28rem),
+    #faf8fc;
+}
+
+.masterclass-card {
+  width: min(100%, 760px);
+  padding: clamp(22px, 5vw, 48px);
+  border: 1px solid #eadcf0;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(58, 18, 83, .1);
+}
+
+.masterclass-header {
+  max-width: 620px;
+}
+
+.masterclass-eyebrow,
+.masterclass-payment-badge {
+  color: #79158d;
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.masterclass-header h1 {
+  margin: 14px 0 10px;
+  color: #19114d;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  line-height: 1.08;
+}
+
+.masterclass-header p,
+.masterclass-form-section > p,
+.masterclass-payment > p {
+  color: #5f5b69;
+  line-height: 1.6;
+}
+
+.masterclass-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 28px 0;
+}
+
+.masterclass-details > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f7f1fa;
+}
+
+.masterclass-details span,
+.masterclass-bank-details dt {
+  color: #676071;
+  font-size: .82rem;
+}
+
+.masterclass-details strong {
+  color: #28114f;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.masterclass-form-section h2,
+.masterclass-payment h2 {
+  margin: 0;
+  color: #241147;
+  font-size: 1.4rem;
+}
+
+.masterclass-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.masterclass-form label {
+  display: grid;
+  gap: 7px;
+  color: #292438;
+  font-size: .92rem;
+  font-weight: 700;
+}
+
+.masterclass-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 13px;
+  border: 1px solid #d8cedf;
+  border-radius: 10px;
+  background: #fff;
+  color: #211a2d;
+  font: inherit;
+}
+
+.masterclass-form input:focus {
+  border-color: #85159b;
+  outline: 3px solid rgba(133, 21, 155, .14);
+}
+
+.masterclass-primary-button,
+.masterclass-whatsapp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 11px;
+  background: #79158d;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+}
+
+.masterclass-primary-button:hover,
+.masterclass-whatsapp-button:hover {
+  background: #5f0f70;
+}
+
+.masterclass-primary-button:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+
+.masterclass-submit-error {
+  margin: 14px 0 0;
+  color: #b42318;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.masterclass-privacy-note {
+  margin: 14px 0 0;
+  color: #746d7c;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.masterclass-payment {
+  padding-top: 6px;
+}
+
+.masterclass-payment h2 {
+  margin-top: 10px;
+}
+
+.masterclass-bank-details {
+  display: grid;
+  gap: 0;
+  margin: 22px 0;
+  border: 1px solid #eadcf0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.masterclass-bank-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #fcfaff;
+}
+
+.masterclass-bank-details > div + div {
+  border-top: 1px solid #eadcf0;
+}
+
+.masterclass-bank-details dt {
+  flex: 0 0 auto;
+}
+
+.masterclass-bank-details dd {
+  margin: 0;
+  color: #241147;
+  font-weight: 750;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.masterclass-whatsapp-button {
+  width: 100%;
+  background: #128c4a;
+}
+
+.masterclass-whatsapp-button:hover {
+  background: #0c713b;
+}
+
+.masterclass-whatsapp-button i {
+  font-size: 1.35rem;
+}
+
+.masterclass-whatsapp-number {
+  margin: 12px 0 0;
+  color: #45404e;
+  text-align: center;
+}
+
+.masterclass-whatsapp-number a {
+  color: #147c47;
+  font-weight: 800;
+}
+
+.masterclass-edit-button {
+  margin-top: 16px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: #711584;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+@media (max-width: 520px) {
+  .masterclass-page {
+    min-height: calc(100vh - 64px);
+    padding: 20px 12px;
+  }
+
+  .masterclass-card {
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .masterclass-details {
+    grid-template-columns: minmax(0, 1fr);
+    margin: 22px 0;
+  }
+
+  .masterclass-bank-details > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .masterclass-bank-details dd {
+    text-align: left;
+  }
+}

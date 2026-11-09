@@ -467,6 +467,12 @@ const getDailyDevotionalIndex = (dateKey) => {
   return dayOfYear % dailyDevotionalContent.length;
 };
 
+const getDevotionalCycleDay = (dateKey) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const dayOfYear = Math.floor((Date.UTC(year, month - 1, day) - Date.UTC(year, 0, 1)) / 86_400_000);
+  return (dayOfYear % 360) + 1;
+};
+
 const dailyDevotionalChallenges = [
   'Offer practical kindness to one person today.',
   'Take five quiet minutes to pray and listen.',
@@ -597,6 +603,7 @@ export default function SolutionChatPage() {
   const [appNotificationsError, setAppNotificationsError] = useState('');
   const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
   const [dailyDevotionalError, setDailyDevotionalError] = useState(null);
+  const [devotionalLibrary, setDevotionalLibrary] = useState(null);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [dailyNotificationStatus, setDailyNotificationStatus] = useState(() => {
     const dateKey = getLagosDateKey(new Date());
@@ -710,15 +717,18 @@ export default function SolutionChatPage() {
   const [question, setQuestion] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const todayDateKey = getLagosDateKey(clockNow);
-  const dailyDevotional = dailyDevotionalContent[getDailyDevotionalIndex(todayDateKey)];
+  const devotionalCycleDay = getDevotionalCycleDay(todayDateKey);
+  const fallbackDevotional = dailyDevotionalContent[(devotionalCycleDay - 1) % dailyDevotionalContent.length];
+  const dailyDevotional = devotionalLibrary?.[devotionalCycleDay - 1] || fallbackDevotional;
   const dailyDevotionalReference = dailyDevotional.reference;
-  const dailyDevotionalChallenge = dailyDevotionalChallenges[getDailyDevotionalIndex(todayDateKey) % dailyDevotionalChallenges.length];
-  const devotionalCopy = translatedDevotional?.reference === dailyDevotionalReference
+  const dailyDevotionalChallenge = dailyDevotional.challenge || dailyDevotionalChallenges[(devotionalCycleDay - 1) % dailyDevotionalChallenges.length];
+  const devotionalCopy = translatedDevotional?.cycleDay === devotionalCycleDay
+    && translatedDevotional?.reference === dailyDevotionalReference
     && translatedDevotional.language === devotionalLanguage
     ? translatedDevotional
     : {
       ...dailyDevotional,
-      reflection: 'Read this verse slowly. What does it show you about God, and how can you carry its truth into one moment of your day?',
+      reflection: dailyDevotional.reflection || 'Read this verse slowly. What does it show you about God, and how can it guide one moment with your teenager today?',
       challenge: dailyDevotionalChallenge
     };
   const hasCurrentDailyVerse = verseOfDay?.dailyReference === dailyDevotionalReference;
@@ -1301,16 +1311,36 @@ export default function SolutionChatPage() {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetch('/paz-world/devotions/yearly-devotions.json', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('The devotional library could not be loaded.');
+        return response.json();
+      })
+      .then((payload) => {
+        if (payload.cycleDays !== 360 || !Array.isArray(payload.devotionals) || payload.devotionals.length !== 360) {
+          throw new Error('The devotional library is incomplete.');
+        }
+        setDevotionalLibrary(payload.devotionals);
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') console.error('Could not load the PAZ World devotional library:', error);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     if (devotionalLanguage === 'en') return undefined;
 
     const controller = new AbortController();
     Promise.all([
       translateDevotionalText(dailyDevotional.story, devotionalLanguage, controller.signal),
-      translateDevotionalText('Read this verse slowly. What does it show you about God, and how can you carry its truth into one moment of your day?', devotionalLanguage, controller.signal),
+      translateDevotionalText(dailyDevotional.reflection || 'Read this verse slowly. What does it show you about God, and how can it guide one moment with your teenager today?', devotionalLanguage, controller.signal),
       translateDevotionalText(dailyDevotional.prayer, devotionalLanguage, controller.signal),
-      translateDevotionalText(dailyDevotionalChallenges[getDailyDevotionalIndex(todayDateKey) % dailyDevotionalChallenges.length], devotionalLanguage, controller.signal)
+      translateDevotionalText(dailyDevotionalChallenge, devotionalLanguage, controller.signal)
     ]).then(([story, reflection, prayer, challenge]) => {
       setTranslatedDevotional({
+        cycleDay: devotionalCycleDay,
         reference: dailyDevotionalReference,
         language: devotionalLanguage,
         story,
@@ -1327,7 +1357,7 @@ export default function SolutionChatPage() {
       }
     });
     return () => controller.abort();
-  }, [dailyDevotional.prayer, dailyDevotional.reference, dailyDevotional.story, dailyDevotionalReference, devotionalLanguage, todayDateKey]);
+  }, [dailyDevotional.prayer, dailyDevotional.reference, dailyDevotional.reflection, dailyDevotional.story, dailyDevotionalChallenge, dailyDevotionalReference, devotionalCycleDay, devotionalLanguage, todayDateKey]);
 
   useEffect(() => {
     let active = true;
@@ -1798,7 +1828,7 @@ export default function SolutionChatPage() {
         <p>{devotionalCopy.prayer}</p>
       </section>
       {devotionalLanguage !== 'en' && !devotionalTranslationStatus
-        && (translatedDevotional?.reference !== dailyDevotionalReference || translatedDevotional?.language !== devotionalLanguage)
+        && (translatedDevotional?.cycleDay !== devotionalCycleDay || translatedDevotional?.reference !== dailyDevotionalReference || translatedDevotional?.language !== devotionalLanguage)
         && <p className="solution-chat-daily-devotional-language-note" role="status">Translating today’s devotional…</p>}
       {devotionalTranslationStatus && <p className="solution-chat-daily-devotional-language-note" role="status">{devotionalTranslationStatus}</p>}
       <section className="solution-chat-daily-devotional-activity" aria-labelledby="solution-chat-daily-puzzle-title">

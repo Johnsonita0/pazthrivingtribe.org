@@ -1,10 +1,11 @@
-const CACHE_NAME = 'paz-world-v7';
+const CACHE_NAME = 'paz-world-v8';
 const APP_URL = '/paz-world/';
 const APP_SHELL = [
   APP_URL,
   '/paz-world/manifest.webmanifest',
   '/paz-world/paz-world-logo.png',
-  '/paz-world/bible-kjv.json'
+  '/paz-world/bible-kjv.json',
+  '/paz-world/devotions/yearly-devotions.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -78,7 +79,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   const isBundledBible = requestUrl.pathname === '/paz-world/bible-kjv.json';
-  if (!isBundledBible && !['script', 'style', 'image', 'font'].includes(request.destination)) return;
+  const isDevotionalLibrary = requestUrl.pathname === '/paz-world/devotions/yearly-devotions.json';
+  if (!isBundledBible && !isDevotionalLibrary && !['script', 'style', 'image', 'font'].includes(request.destination)) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
     const cachedAsset = await cache.match(request);

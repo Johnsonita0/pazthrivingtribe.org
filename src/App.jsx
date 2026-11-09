@@ -10,6 +10,7 @@ const GallerySection = lazy(() => import('./GallerySection'));
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const TeensRegistrationPage = lazy(() => import('./pages/TeensRegistrationPage'));
 const BookSessionPage = lazy(() => import('./pages/BookSessionPage'));
+const MasterclassPage = lazy(() => import('./pages/MasterclassPage'));
 const FeedbackPage = lazy(() => import('./pages/FeedbackPage'));
 const ShopPage = lazy(() => import('./pages/ShopPage'));
 const VendorDashboard = lazy(() => import('./pages/VendorDashboard'));
@@ -65,6 +66,10 @@ const seoPages = {
   '/book-session': {
     title: 'Book a Coaching or Support Session | PAZ',
     description: 'Request a PAZ Thriving Tribe session for personal guidance, emotional support, parenting or family coaching.'
+  },
+  '/masterclass': {
+    title: 'Parent Masterclass: Getting Your Teenager to Speak to You | PAZ',
+    description: 'Register for the PAZ Thriving Teens Academy parent masterclass on communicating with your teenager.'
   },
   '/shop': {
     title: 'Personal Growth Resources & Shop | PAZ Thriving Tribe',
@@ -5106,6 +5111,9 @@ function AppApplication() {
                 <Link to={withIndependencePreview('/care-counseling')} className="nav-link-item" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
                   <i className="fa-solid fa-hand-holding-heart"></i> Talk & Thrive
                 </Link>
+                <Link to={withIndependencePreview('/masterclass')} className={`nav-link-item ${location.pathname === '/masterclass' ? 'active' : ''}`} style={independenceNavStyle} onClick={() => setNavOpen(false)}>
+                  <i className="fa-solid fa-chalkboard-user" aria-hidden="true"></i> Parent Masterclass
+                </Link>
                 <Link to={withIndependencePreview('/teens-kids-academy')} className="nav-link-item" style={independenceNavStyle} onClick={() => setNavOpen(false)}>
                   <i className="fa-solid fa-child-reaching"></i> Thriving Pre-teens & Teens
                 </Link>
@@ -5637,6 +5645,7 @@ function AppApplication() {
           <Route path="/teens_reg" element={<TeensRegistrationPage paystackPublicKey={paystackPublicKey} />} />
           <Route path="/teens-reg" element={<TeensRegistrationPage paystackPublicKey={paystackPublicKey} />} />
           <Route path="/book-session" element={<BookSessionPage />} />
+          <Route path="/masterclass" element={<MasterclassPage />} />
           <Route path="/feedback" element={<FeedbackPage />} />
           <Route path="/store/*" element={<Navigate to="/shop" replace />} />
           <Route path="/shop" element={<div className="public-website-container shop-page-shell" style={{ paddingTop: '72px' }}><ShopPage onOrderSubmitted={setShopOrders} paystackPublicKey={paystackPublicKey} storeProducts={storeProducts} storeBankAccount={storeBankAccount} isIndependenceDay={isIndependenceDay} independenceAnniversary={independenceAnniversary} isIndependencePreview={isIndependencePreview} /></div>} />
