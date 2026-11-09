@@ -95,7 +95,14 @@ function isValidMasterclassMeetLink(value) {
   }
 }
 
-function MasterclassAdminPanel({ session }) {
+function getMasterclassWhatsappNumber(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const international = digits.startsWith("0") ? `234${digits.slice(1)}` : digits;
+  return international.length >= 10 && international.length <= 15 ? international : "";
+}
+
+function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session }) {
+  const [activeTab, setActiveTab] = useState("email");
   const [meetLink, setMeetLink] = useState("");
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
@@ -140,10 +147,44 @@ function MasterclassAdminPanel({ session }) {
         <div>
           <span>PAZ Thriving Teens Academy</span>
           <h2 id="masterclass-admin-title">Master Class</h2>
-          <p>Add the Google Meet link, preview the email, and send it to everyone registered.</p>
+          <p>Manage participants and send your branded Google Meet invitation.</p>
+        </div>
+        <div className="masterclass-admin-actions">
+          <button type="button" onClick={onRefresh} disabled={loading}>
+            <i className={`fa-solid ${loading ? "fa-spinner fa-spin" : "fa-rotate"}`} aria-hidden="true"></i>
+            {loading ? "Loading…" : "Refresh"}
+          </button>
         </div>
       </div>
-      <div className="masterclass-admin-tab-panel">
+      {error && <p className="masterclass-admin-error" role="alert">{error}</p>}
+      <div className="masterclass-admin-tabs" role="tablist" aria-label="Master Class sections">
+        <button
+          id="masterclass-email-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "email"}
+          aria-controls="masterclass-email-panel"
+          className={activeTab === "email" ? "active" : ""}
+          onClick={() => setActiveTab("email")}
+        >
+          <i className="fa-solid fa-paper-plane" aria-hidden="true"></i>
+          Send Meet Link
+        </button>
+        <button
+          id="masterclass-participants-tab"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "participants"}
+          aria-controls="masterclass-participants-panel"
+          className={activeTab === "participants" ? "active" : ""}
+          onClick={() => setActiveTab("participants")}
+        >
+          <i className="fa-solid fa-users" aria-hidden="true"></i>
+          Participants <span className="masterclass-tab-count">{registrants.length}</span>
+        </button>
+      </div>
+      {activeTab === "email" ? (
+      <div id="masterclass-email-panel" className="masterclass-admin-tab-panel" role="tabpanel" aria-labelledby="masterclass-email-tab">
         <form className="masterclass-email-form" onSubmit={sendMeetLink}>
           <label className="masterclass-meet-link-field">
             <span>Google Meet link</span>
@@ -203,6 +244,48 @@ function MasterclassAdminPanel({ session }) {
           </button>
         </form>
       </div>
+      ) : (
+        <div id="masterclass-participants-panel" className="masterclass-admin-tab-panel" role="tabpanel" aria-labelledby="masterclass-participants-tab">
+          {loading && registrants.length === 0 ? (
+            <p className="masterclass-admin-empty" role="status">Loading participants…</p>
+          ) : registrants.length === 0 ? (
+            <p className="masterclass-admin-empty">No masterclass participants have registered yet.</p>
+          ) : (
+            <div className="masterclass-registrant-list">
+              {registrants.map((registrant) => {
+                const name = String(registrant.registrant_name || "Participant").trim();
+                const whatsappNumber = getMasterclassWhatsappNumber(registrant.phone);
+                const message = `Hello ${name}, thank you for registering for the PAZ Parent Masterclass “Getting Your Teenager to Speak to You.” We’re glad you’ll be joining us. Please let us know if you need any help.`;
+                const whatsappLink = whatsappNumber
+                  ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`
+                  : "";
+                return (
+                  <article className="masterclass-registrant-card" key={registrant.id}>
+                    <div className="masterclass-registrant-details">
+                      <h3>{name}</h3>
+                      {registrant.phone && <a href={`tel:${registrant.phone}`}>{registrant.phone}</a>}
+                      <span>
+                        Registered {registrant.created_at
+                          ? new Date(registrant.created_at).toLocaleString()
+                          : "date unavailable"}
+                      </span>
+                    </div>
+                    {whatsappLink ? (
+                      <a className="masterclass-registrant-whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
+                        <i className="fa-brands fa-whatsapp" aria-hidden="true"></i>
+                        Message on WhatsApp
+                      </a>
+                    ) : (
+                      <span className="masterclass-registrant-invalid-phone">Phone number unavailable</span>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          <p className="masterclass-admin-note">WhatsApp opens a prefilled message. Review it and press Send in WhatsApp.</p>
+        </div>
+      )}
     </section>
   );
 }
@@ -7606,7 +7689,15 @@ export default function AdminDashboard(props) {
                 </div>
               </div>
             ) : activeDashboardView === "masterclass" ? (
-              <MasterclassAdminPanel session={session} />
+              <MasterclassAdminPanel
+                registrants={masterclassRegistrants}
+                loading={masterclassRegistrantsLoading}
+                session={session}
+                error={masterclassSessionToken
+                  ? masterclassRegistrantsError
+                  : "Your admin session has expired. Sign in again to view participants."}
+                onRefresh={() => setMasterclassRegistrantsRefreshKey((key) => key + 1)}
+              />
             ) : (
               <>
                 <h2
