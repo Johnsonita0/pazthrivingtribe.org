@@ -411,7 +411,7 @@ function HomeHelpModal({ context, services }) {
 // MAIN UNIFIED APPLICATION WITH DEDICATED SERVICE PAGES & INTAKE FORMS
 // =========================================================================
 function App() {
-  if (import.meta.env.PROD && import.meta.env.VITE_MAINTENANCE_MODE !== 'false') {
+  if (import.meta.env.PROD && import.meta.env.VITE_MAINTENANCE_MODE === 'true') {
     return <Suspense fallback={null}><MaintenancePage /></Suspense>;
   }
   return <AppApplication />;
