@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { notifyAdminActivity } from '../utils/notifyAdminActivity';
 import './masterclass.css';
 
 const masterclassEventKey = 'parent-communication-2026-11-21';
@@ -16,9 +17,15 @@ const masterclassDetails = {
 
 const initialForm = { name: '', email: '', phone: '' };
 
+const generateMasterclassReference = () => {
+  const stamp = Date.now().toString().slice(-6);
+  return `PAZ-MC-${stamp}`;
+};
+
 export default function MasterclassPage() {
   const [form, setForm] = useState(initialForm);
   const [registrant, setRegistrant] = useState(null);
+  const [referenceNumber, setReferenceNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
@@ -31,20 +38,84 @@ export default function MasterclassPage() {
       email: form.email.trim().toLowerCase(),
       phone: form.phone.trim()
     };
+    const generatedReference = generateMasterclassReference();
 
     setSubmitting(true);
     setSubmitError('');
 
     try {
-      const { error } = await supabase.from('masterclass_registrations').insert({
+      const insertPayload = {
         event_key: masterclassEventKey,
         registrant_name: registration.name,
         email: registration.email,
-        phone: registration.phone
-      });
+        phone: registration.phone,
+        reference_number: generatedReference
+      };
 
-      if (error) throw error;
+      let insertError = null;
+      try {
+        const { error } = await supabase.from('masterclass_registrations').insert(insertPayload);
+        insertError = error;
+      } catch (error) {
+        insertError = error;
+      }
+
+      if (insertError) {
+        const message = String(insertError?.message || '');
+        const missingReferenceColumn = /reference_number|column/i.test(message);
+        if (!missingReferenceColumn) {
+          throw insertError;
+        }
+
+        const { error: fallbackError } = await supabase.from('masterclass_registrations').insert({
+          event_key: masterclassEventKey,
+          registrant_name: registration.name,
+          email: registration.email,
+          phone: registration.phone
+        });
+
+        if (fallbackError) throw fallbackError;
+      }
+
+      setReferenceNumber(generatedReference);
       setRegistrant(registration);
+
+      try {
+        const response = await fetch('/api/send-masterclass-registration-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: registration.name,
+            email: registration.email,
+            phone: registration.phone,
+            referenceNumber: generatedReference,
+            eventName: 'Parent Masterclass',
+            amount: masterclassDetails.fee,
+            date: masterclassDetails.date,
+            time: masterclassDetails.time,
+            venue: 'Online · Google Meet'
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          console.error('Masterclass confirmation email failed:', payload?.error || 'Unknown error');
+        }
+      } catch (emailError) {
+        console.error('Masterclass confirmation email error:', emailError);
+      }
+
+      try {
+        await notifyAdminActivity('Parent Masterclass', 'New parent masterclass registration', {
+          name: registration.name,
+          email: registration.email,
+          phone: registration.phone,
+          referenceNumber: generatedReference,
+          eventKey: masterclassEventKey
+        });
+      } catch (activityError) {
+        console.error('Masterclass admin activity notification failed:', activityError);
+      }
     } catch (error) {
       console.error('Masterclass registration could not be saved:', error);
       setSubmitError(error?.message || 'We could not submit your registration. Please try again.');
@@ -54,7 +125,7 @@ export default function MasterclassPage() {
   };
 
   const whatsappMessage = registrant
-    ? `Hello PAZ Thriving Tribe, I have registered for the Parent Masterclass "Getting Your Teenager to Speak to You". Name: ${registrant.name}. Email: ${registrant.email}. Phone: ${registrant.phone}. I have made the ₦10,000 payment and attached my proof of payment.`
+    ? `Hello PAZ Thriving Tribe, I have registered for the Parent Masterclass "Getting Your Teenager to Speak to You". Name: ${registrant.name}. Email: ${registrant.email}. Phone: ${registrant.phone}. My registration reference is ${referenceNumber}. I will make the ₦10,000 payment and attach my proof of payment.`
     : '';
   const whatsappLink = `https://wa.me/${masterclassDetails.whatsappNumber}?text=${encodeURIComponent(whatsappMessage)}`;
 
@@ -138,8 +209,9 @@ export default function MasterclassPage() {
           <section className="masterclass-payment" aria-live="polite">
             <span className="masterclass-payment-badge">Registration details received</span>
             <h2>Pay by bank transfer</h2>
-            <p>Transfer {masterclassDetails.fee} using the account below. Your place is confirmed after payment proof is received.</p>
+            <p>Transfer {masterclassDetails.fee} using the account below. Your registration reference is <strong>{referenceNumber || 'PAZ-MC-000000'}</strong>. Your place is confirmed after payment proof is received.</p>
             <dl className="masterclass-bank-details">
+              <div><dt>Reference</dt><dd><strong>{referenceNumber || 'PAZ-MC-000000'}</strong></dd></div>
               <div><dt>Account name</dt><dd>{masterclassDetails.accountName}</dd></div>
               <div><dt>Bank</dt><dd>{masterclassDetails.bank}</dd></div>
               <div><dt>Account number</dt><dd><strong>{masterclassDetails.accountNumber}</strong></dd></div>
