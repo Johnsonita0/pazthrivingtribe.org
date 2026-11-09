@@ -4,17 +4,17 @@
   place-items: start center;
   padding: clamp(24px, 5vw, 56px) 16px;
   background:
-    radial-gradient(circle at 90% 5%, rgba(234, 213, 255, .75), transparent 28rem),
-    #faf8fc;
+    radial-gradient(circle at 90% 5%, rgba(192, 230, 215, .8), transparent 28rem),
+    #f5f7f4;
 }
 
 .masterclass-card {
   width: min(100%, 760px);
   padding: clamp(22px, 5vw, 48px);
-  border: 1px solid #eadcf0;
+  border: 1px solid #dfe9e3;
   border-radius: 24px;
   background: #fff;
-  box-shadow: 0 20px 60px rgba(58, 18, 83, .1);
+  box-shadow: 0 20px 60px rgba(13, 52, 39, .08);
 }
 
 .masterclass-header {
@@ -23,7 +23,7 @@
 
 .masterclass-eyebrow,
 .masterclass-payment-badge {
-  color: #79158d;
+  color: #1d6a57;
   font-size: .78rem;
   font-weight: 800;
   letter-spacing: .08em;
@@ -32,7 +32,7 @@
 
 .masterclass-header h1 {
   margin: 14px 0 10px;
-  color: #19114d;
+  color: #183b31;
   font-size: clamp(2rem, 6vw, 3.25rem);
   line-height: 1.08;
 }
@@ -57,7 +57,7 @@
   min-width: 0;
   padding: 14px;
   border-radius: 14px;
-  background: #f7f1fa;
+  background: #edf7f2;
 }
 
 .masterclass-details span,
@@ -67,7 +67,7 @@
 }
 
 .masterclass-details strong {
-  color: #28114f;
+  color: #173f31;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -75,7 +75,7 @@
 .masterclass-form-section h2,
 .masterclass-payment h2 {
   margin: 0;
-  color: #241147;
+  color: #183b31;
   font-size: 1.4rem;
 }
 
@@ -105,8 +105,8 @@
 }
 
 .masterclass-form input:focus {
-  border-color: #85159b;
-  outline: 3px solid rgba(133, 21, 155, .14);
+  border-color: #1d6a57;
+  outline: 3px solid rgba(29, 106, 87, .16);
 }
 
 .masterclass-primary-button,
@@ -119,7 +119,7 @@
   padding: 12px 18px;
   border: 0;
   border-radius: 11px;
-  background: #79158d;
+  background: #1d6a57;
   color: #fff;
   font: inherit;
   font-weight: 800;
@@ -129,7 +129,7 @@
 
 .masterclass-primary-button:hover,
 .masterclass-whatsapp-button:hover {
-  background: #5f0f70;
+  background: #164f42;
 }
 
 .masterclass-primary-button:disabled {
@@ -163,7 +163,7 @@
   display: grid;
   gap: 0;
   margin: 22px 0;
-  border: 1px solid #eadcf0;
+  border: 1px solid #dfe9e3;
   border-radius: 14px;
   overflow: hidden;
 }
@@ -173,11 +173,11 @@
   justify-content: space-between;
   gap: 14px;
   padding: 14px 16px;
-  background: #fcfaff;
+  background: #f8fbf9;
 }
 
 .masterclass-bank-details > div + div {
-  border-top: 1px solid #eadcf0;
+  border-top: 1px solid #dfe9e3;
 }
 
 .masterclass-bank-details dt {

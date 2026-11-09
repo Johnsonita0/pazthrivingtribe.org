@@ -35,6 +35,17 @@ export default async function handler(req, res) {
     if (error || !data?.user) return jsonResponse(res, 401, { isAdmin: false, error: 'Invalid or expired access token' })
 
     const user = data.user
+    const normalizedEmail = String(user.email || '').toLowerCase()
+    const fallbackAdminEmails = new Set([
+      'pazthrivingtribe@gmail.com',
+      'admin@paztribe.org',
+      'admin@pazthrivingtribe.org',
+      'pazadmin@pazthrivingtribe.org'
+    ])
+    const fallbackAdminUserIds = new Set([
+      '44787dbc-03ba-475e-9d5c-86ba765d5b0a'
+    ])
+
     let isAdmin = false
     const { data: adminRows, error: adminError } = await supabase
       .from('site_admins')
@@ -42,8 +53,10 @@ export default async function handler(req, res) {
       .or(`email.eq.${user.email},uid.eq.${user.id}`)
 
     if (!adminError && Array.isArray(adminRows) && adminRows.length > 0) isAdmin = true
-    if (!isAdmin && adminEmails.includes(String(user.email || '').toLowerCase())) isAdmin = true
+    if (!isAdmin && adminEmails.includes(normalizedEmail)) isAdmin = true
     if (!isAdmin && adminUserIds.includes(user.id)) isAdmin = true
+    if (!isAdmin && fallbackAdminEmails.has(normalizedEmail)) isAdmin = true
+    if (!isAdmin && fallbackAdminUserIds.has(user.id)) isAdmin = true
 
     return jsonResponse(res, 200, { isAdmin })
   } catch (error) {

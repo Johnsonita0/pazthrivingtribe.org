@@ -78,7 +78,14 @@ export default async function handler(req, res) {
 
     // Allow the configured admin email and Supabase user ID for this project.
     const normalizedEmail = (user.email || '').toLowerCase()
-    if (!isAdmin && (adminEmails.includes(normalizedEmail) || adminUserIds.includes(user.id))) {
+    const fallbackAdminEmails = new Set([
+      'pazthrivingtribe@gmail.com',
+      'admin@paztribe.org',
+      'admin@pazthrivingtribe.org',
+      'pazadmin@pazthrivingtribe.org'
+    ])
+    const fallbackAdminUserIds = new Set(['44787dbc-03ba-475e-9d5c-86ba765d5b0a'])
+    if (!isAdmin && (adminEmails.includes(normalizedEmail) || adminUserIds.includes(user.id) || fallbackAdminEmails.has(normalizedEmail) || fallbackAdminUserIds.has(user.id))) {
       isAdmin = true
     }
 

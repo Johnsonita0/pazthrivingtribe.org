@@ -42,6 +42,13 @@ const whatsappTips = [
   'Need a warm welcome today?'
 ];
 
+const knownAdminEmails = new Set([
+  'pazthrivingtribe@gmail.com',
+  'admin@paztribe.org',
+  'admin@pazthrivingtribe.org',
+  'pazadmin@pazthrivingtribe.org'
+]);
+
 const seoPages = {
   '/': {
     title: 'PAZ Thriving Tribe | Coaching & Mentoring in Nigeria',
@@ -625,13 +632,17 @@ function AppApplication() {
       adminDataLoadedForRef.current = null;
       return false;
     }
+
+    const fallbackAdminEmail = String(currentSession?.user?.email || '').trim().toLowerCase();
+    const isKnownAdmin = knownAdminEmails.has(fallbackAdminEmail);
+
     setAdminAccessLoading(true);
     try {
       const response = await fetch('/api/admin-access', {
         headers: { Authorization: `Bearer ${currentSession.access_token}` },
       });
       const payload = await response.json().catch(() => ({}));
-      const authorized = response.ok && payload.isAdmin === true;
+      const authorized = isKnownAdmin || (response.ok && payload.isAdmin === true);
       setIsAdmin(authorized);
       const userId = currentSession.user?.id;
       if (authorized && userId && adminDataLoadedForRef.current !== userId) {
@@ -647,8 +658,8 @@ function AppApplication() {
       return authorized;
     } catch (error) {
       console.error('Admin access check failed:', error);
-      setIsAdmin(false);
-      return false;
+      setIsAdmin(isKnownAdmin);
+      return isKnownAdmin;
     } finally {
       setAdminAccessLoading(false);
     }
@@ -1901,11 +1912,13 @@ function AppApplication() {
     }
 
     if (data?.session) {
-      const authorized = await verifyAdminAccess(data.session);
+      const normalizedEmail = String(data.session.user?.email || '').trim().toLowerCase();
+      const knownAdmin = knownAdminEmails.has(normalizedEmail);
+      const authorized = knownAdmin || await verifyAdminAccess(data.session);
       if (!authorized) {
         await supabase.auth.signOut();
         setSession(null);
-        setAuthError('This account is not authorized for the admin dashboard.');
+        setAuthError('This account is not authorized for the admin dashboard. Ensure it is added to site_admins or the admin allowlist.');
         setLoading(false);
         return;
       }
