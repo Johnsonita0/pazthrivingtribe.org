@@ -74,12 +74,47 @@ function getMasterclassWhatsappNumber(phone) {
   return international.length >= 10 && international.length <= 15 ? international : "";
 }
 
-function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session }) {
+function MasterclassAdminPanel({ registrants, loading, error, onRefresh, onDelete, session }) {
   const [activeTab, setActiveTab] = useState("email");
   const [meetLink, setMeetLink] = useState("");
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
+  const [deletingRegistrantId, setDeletingRegistrantId] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const validMeetLink = isValidMasterclassMeetLink(meetLink);
+
+  const deleteRegistrant = async (registrant) => {
+    const name = String(registrant.registrant_name || "this participant").trim();
+    if (!window.confirm(`Delete ${name}'s masterclass registration? This cannot be undone.`)) return;
+    const token = session?.access_token || session?.accessToken || "";
+    if (!token) {
+      setDeleteError("Your admin session has expired. Sign in again before deleting a participant.");
+      return;
+    }
+
+    setDeletingRegistrantId(registrant.id);
+    setDeleteError("");
+    try {
+      const response = await fetch("/api/admin-update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "delete_masterclass_registration",
+          registrationId: registrant.id,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not delete this participant.");
+      onDelete(registrant.id);
+    } catch (deleteError) {
+      setDeleteError(deleteError?.message || "Could not delete this participant.");
+    } finally {
+      setDeletingRegistrantId("");
+    }
+  };
 
   const sendMeetLink = async (event) => {
     event.preventDefault();
@@ -129,7 +164,7 @@ function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session
           </button>
         </div>
       </div>
-      {error && <p className="masterclass-admin-error" role="alert">{error}</p>}
+      {(error || deleteError) && <p className="masterclass-admin-error" role="alert">{deleteError || error}</p>}
       <div className="masterclass-admin-tabs" role="tablist" aria-label="Master Class sections">
         <button
           id="masterclass-email-tab"
@@ -243,14 +278,26 @@ function MasterclassAdminPanel({ registrants, loading, error, onRefresh, session
                           : "date unavailable"}
                       </span>
                     </div>
-                    {whatsappLink ? (
-                      <a className="masterclass-registrant-whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
-                        <i className="fa-brands fa-whatsapp" aria-hidden="true"></i>
-                        Message on WhatsApp
-                      </a>
-                    ) : (
-                      <span className="masterclass-registrant-invalid-phone">Phone number unavailable</span>
-                    )}
+                    <div className="masterclass-registrant-actions">
+                      {whatsappLink ? (
+                        <a className="masterclass-registrant-whatsapp" href={whatsappLink} target="_blank" rel="noopener noreferrer">
+                          <i className="fa-brands fa-whatsapp" aria-hidden="true"></i>
+                          Message on WhatsApp
+                        </a>
+                      ) : (
+                        <span className="masterclass-registrant-invalid-phone">Phone number unavailable</span>
+                      )}
+                      <button
+                        className="masterclass-registrant-delete"
+                        type="button"
+                        onClick={() => deleteRegistrant(registrant)}
+                        disabled={Boolean(deletingRegistrantId)}
+                        aria-label={`Delete ${name}`}
+                      >
+                        <i className={`fa-solid ${deletingRegistrantId === registrant.id ? "fa-spinner fa-spin" : "fa-trash"}`} aria-hidden="true"></i>
+                        {deletingRegistrantId === registrant.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
                   </article>
                 );
               })}
@@ -3328,14 +3375,6 @@ export default function AdminDashboard(props) {
               testimonials.
             </p>
           </div>
-          <button
-            className="masterclass-dashboard-shortcut"
-            type="button"
-            onClick={() => focusDashboardView(setActiveDashboardView, "masterclass")}
-          >
-            <i className="fa-solid fa-chalkboard-user" aria-hidden="true"></i>
-            Open Master Class
-          </button>
         </div>
 
         <style>{`
@@ -7619,6 +7658,7 @@ export default function AdminDashboard(props) {
                   ? masterclassRegistrantsError
                   : "Your admin session has expired. Sign in again to view participants."}
                 onRefresh={() => setMasterclassRegistrantsRefreshKey((key) => key + 1)}
+                onDelete={(id) => setMasterclassRegistrants((current) => current.filter((registrant) => registrant.id !== id))}
               />
             ) : (
               <>
